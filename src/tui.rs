@@ -201,7 +201,7 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
     } else {
         for (i, l) in contenu.lignes.iter().enumerate() {
             if i == vue.selection && vue.module != 0 && vue.module != 4 && !l.trim().is_empty() {
-                s.push_str(&format!("\u{1b}[1;37m▸ {}\u{1b}[0m\r\n", tronquer(l)));
+                s.push_str(&format!("\u{1b}[1;95m▸ {}\u{1b}[0m\r\n", tronquer(l)));
             } else {
                 s.push_str(&format!(" {}\r\n", tronquer(l)));
             }
@@ -393,6 +393,10 @@ mod tests {
         assert!(ecran.contains("┬"), "séparateur d'onglets manquant");
         assert!(ecran.contains("┴"), "bas des onglets manquant");
         assert!(ecran.contains("▸ Factures"), "onglet actif non marqué");
+        assert!(ecran.contains("\u{1b}[35m"), "écriture violette du menu manquante");
+        assert!(ecran.contains("\u{1b}[1;95m"), "écriture violet vif de la sélection manquante");
+        assert!(!ecran.contains("\u{1b}[7m"), "surlignage en vidéo inverse encore présent");
+        assert!(!ecran.contains("48;5;"), "fond coloré encore présent");
     }
 
     #[test]
