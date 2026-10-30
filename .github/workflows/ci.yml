@@ -39,13 +39,6 @@ jobs:
           cargo run --quiet -- /compta fec | head -3
           test -f /tmp/erp-demo/etat.tsv && echo "persistance OK"
 
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Clippy (informatif)
-        run: rustup component add clippy >/dev/null 2>&1; cargo clippy 2>&1 | tail -5 || true
-
       - name: Publier le diagnostic sur l'issue #1 (si échec)
         if: failure()
         env:
@@ -54,3 +47,10 @@ jobs:
           { echo '## cargo build'; echo '```'; tail -70 /tmp/build.log 2>/dev/null; echo '```';
             echo '## cargo test'; echo '```'; tail -70 /tmp/tests.log 2>/dev/null; echo '```'; } > /tmp/diag.md
           gh issue comment 1 --repo "${{ github.repository }}" --body-file /tmp/diag.md || true
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clippy (informatif)
+        run: rustup component add clippy >/dev/null 2>&1; cargo clippy 2>&1 | tail -5 || true
