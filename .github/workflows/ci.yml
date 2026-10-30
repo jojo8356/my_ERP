@@ -33,6 +33,7 @@ jobs:
           cargo test -- --nocapture > /tmp/tests.log 2>&1
           code=$?
           { echo '## Résultats cargo test'; echo '```'; tail -80 /tmp/tests.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep -E "FAILED|panicked|failures:|test result|error\[|^error" /tmp/tests.log | head -25 | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error::$l"; done
           exit $code
       - name: Fumée CLI (mode mémoire)
         run: |
