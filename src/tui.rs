@@ -141,9 +141,9 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
     // ── Cadre du titre ──────────────────────────────────────────────
     let bord = "─".repeat(LARG - 2);
     let titre = format!(" ERP — {societe_nom}");
-    s.push_str(&format!("\u{1b}[34m┌{bord}┐\u{1b}[0m\r\n"));
+    s.push_str(&format!("\u{1b}[37m┌{bord}┐\u{1b}[0m\r\n"));
     s.push_str(&format!(
-        "\u{1b}[34m│\u{1b}[0m\u{1b}[1;37;48;5;17m {:<largeur$} \u{1b}[0m\u{1b}[34m│\u{1b}[0m\r\n",
+        "\u{1b}[37m│\u{1b}[0m\u{1b}[1;37m {:<largeur$} \u{1b}[0m\u{1b}[37m│\u{1b}[0m\r\n",
         titre,
         largeur = LARG - 4
     ));
@@ -154,8 +154,8 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
         .map(|_| "─".repeat(CELL))
         .collect::<Vec<_>>()
         .join("┬");
-    s.push_str(&format!("\u{1b}[34m├{jonction_haut}┤\u{1b}[0m\r\n"));
-    let mut rangee = String::from("\u{1b}[34m│\u{1b}[0m");
+    s.push_str(&format!("\u{1b}[37m├{jonction_haut}┤\u{1b}[0m\r\n"));
+    let mut rangee = String::from("\u{1b}[37m│\u{1b}[0m");
     for (i, m) in MODULES.iter().enumerate() {
         let centre = {
             let texte = if i == vue.module { format!("▸ {m}") } else { m.to_string() };
@@ -165,18 +165,18 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
             format!("{}{}{}", " ".repeat(gauche), texte, " ".repeat(droite))
         };
         if i == vue.module {
-            rangee.push_str(&format!("\u{1b}[1;34m{centre}\u{1b}[0m"));
+            rangee.push_str(&format!("\u{1b}[1;37m{centre}\u{1b}[0m"));
         } else {
             rangee.push_str(&centre);
         }
-        rangee.push_str("\u{1b}[34m│\u{1b}[0m");
+        rangee.push_str("\u{1b}[37m│\u{1b}[0m");
     }
     s.push_str(&format!("{rangee}\r\n"));
     let bas: String = (0..MODULES.len())
         .map(|_| "─".repeat(CELL))
         .collect::<Vec<_>>()
         .join("┴");
-    s.push_str(&format!("\u{1b}[34m└{bas}┘\u{1b}[0m\r\n"));
+    s.push_str(&format!("\u{1b}[37m└{bas}┘\u{1b}[0m\r\n"));
     if vue.aide {
         for l in [
             "AIDE — touches de la TUI",
@@ -201,14 +201,14 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
     } else {
         for (i, l) in contenu.lignes.iter().enumerate() {
             if i == vue.selection && vue.module != 0 && vue.module != 4 && !l.trim().is_empty() {
-                s.push_str(&format!("\u{1b}[1;34m▸ {}\u{1b}[0m\r\n", tronquer(l)));
+                s.push_str(&format!("\u{1b}[1;37m▸ {}\u{1b}[0m\r\n", tronquer(l)));
             } else {
                 s.push_str(&format!(" {}\r\n", tronquer(l)));
             }
         }
     }
-    s.push_str(&format!("\u{1b}[34m{}\u{1b}[0m\r\n", "─".repeat(LARG)));
-    s.push_str(&format!("\u{1b}[2m{}\u{1b}[0m", tronquer(&vue.message)));
+    s.push_str(&format!("\u{1b}[37m{}\u{1b}[0m\r\n", "─".repeat(LARG)));
+    s.push_str(&format!("\u{1b}[37m{}\u{1b}[0m", tronquer(&vue.message)));
     s
 }
 
