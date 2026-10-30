@@ -35,6 +35,7 @@ comptabilité (seuils micro, FEC), achat-revente Vinted (marges, alertes DAC7).
 ```bash
 cargo build --release            # binaire : target/release/my-erp
 ./target/release/my-erp          # mode interactif (erp ›), tapez « aide »
+./target/release/my-erp tui     # interface TUI plein écran (Tab, ↑↓, v, p, q)
 ./target/release/my-erp /clients nouveau --nom "Atelier Dupont" --type pro
 ./target/release/my-erp /factures   # commande unique, scriptable
 bash scripts/scenario-demo.sh    # démonstration complète commentée
