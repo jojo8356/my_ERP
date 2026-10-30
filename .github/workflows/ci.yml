@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -30,7 +34,7 @@ jobs:
           set +e
           cargo build > /tmp/build.log 2>&1
           code=$?
-          grep -E "^error|^warning: unused" -A 4 /tmp/build.log | head -60 | sed 's/%/%25/g; s/\r//g' | while IFS= read -r l; do echo "::error::$l"; done
+          { echo '## cargo build'; echo '```'; tail -60 /tmp/build.log; echo '```'; } > /tmp/diag-build.md
           tail -20 /tmp/build.log
           exit $code
       - name: Tests (sortie versée au résumé du run en cas d'échec)
@@ -39,7 +43,7 @@ jobs:
           cargo test -- --nocapture > /tmp/tests.log 2>&1
           code=$?
           { echo '## Résultats cargo test'; echo '```'; tail -80 /tmp/tests.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          grep -E "FAILED|panicked|failures:|test result|error\[|^error" /tmp/tests.log | head -25 | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error::$l"; done
+          { echo '## cargo test'; echo '```'; tail -80 /tmp/tests.log; echo '```'; } > /tmp/diag-tests.md
           exit $code
       - name: Fumée CLI (mode mémoire)
         run: |
@@ -49,6 +53,14 @@ jobs:
         env:
           ERP_DATABASE_URL: postgres://erp:erp@localhost:5432/erp
         run: cargo run --quiet -- /admin sante
+
+      - name: Publier le diagnostic sur l'issue #1 (si échec)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat /tmp/diag-build.md /tmp/diag-tests.md > /tmp/diag.md 2>/dev/null || echo '## (aucun diagnostic)' > /tmp/diag.md
+          gh issue comment 1 --repo "${{ github.repository }}" --body-file /tmp/diag.md || true
 
   clippy:
     runs-on: ubuntu-latest
