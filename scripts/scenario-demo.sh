@@ -10,7 +10,7 @@ echo "── 1. Création d'un client"
 $ERP /clients nouveau --nom "Atelier Dupont" --type pro --email contact@example.fr
 
 echo "── 2. Facture de maintenance (2 × 500,00 €)"
-NUM=$($ERP /factures nouvelle --client dupont --activite services --ligne "Maintenance informatique;2;500,00;2000" | grep -oE "FA-[0-9]{4}-[0-9]{4}")
+NUM=$($ERP /factures nouvelle --client dupont --activite services --ligne "Maintenance informatique;2;500,00;2000" | grep -oE "FA-[0-9]{4}-[0-9]{4}" | head -1)
 echo "    facture créée : $NUM"
 
 echo "── 3. Validation (la facture devient immuable)"
