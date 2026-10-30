@@ -27,8 +27,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Compiler
         run: cargo build --verbose
-      - name: Tests unitaires et métier
-        run: cargo test --verbose
+      - name: Tests domaine (calculs, TVA, seuils, dates)
+        run: cargo test domain:: -- --nocapture
+      - name: Tests persistance mémoire (parcours facture)
+        run: cargo test store:: -- --nocapture
+      - name: Tests CLI (tokenisation, lignes)
+        run: cargo test cli:: -- --nocapture
       - name: Fumée CLI (mode mémoire)
         run: |
           cargo run --quiet -- --memoire /clients "nouveau" --nom "Atelier Dupont" --type pro --email contact@example.fr
