@@ -88,6 +88,7 @@ Navigation par chemins (comme des URL, à connaître par cœur) :
   erp /societe                   société, régime TVA  |  erp /societe regime franchise|reel
   erp /admin sante               état du système  |  erp /admin audit
 Options utiles : --json sur les listes. Mode interactif : lancez `erp` seul (q pour quitter, ? = cette aide).
+Interface plein écran dans le terminal : `erp tui` (Tab = module, ↑↓ = naviguer, v = valider, p = payer, q = quitter).
 Format d'une ligne : \"désignation;quantité;prix unitaire HT;taux TVA en points de base (2000 = 20 %)\"";
 
 impl App {

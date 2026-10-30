@@ -45,6 +45,18 @@ fn main() -> ExitCode {
         .cloned()
         .collect();
 
+    // Interface TUI plein écran (terminal) : `my-erp tui`
+    if commande.iter().any(|a| a == "tui" || a == "--tui") {
+        return match my_erp::tui::lancer(app.store.as_mut()) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("✗ TUI : {e}");
+                eprintln!("  (utilisez le mode interactif classique : lancez le binaire sans argument)");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
     if commande.is_empty() {
         let stdin = std::io::stdin();
         let mut lecteur: BufReader<Stdin> = BufReader::new(stdin);
