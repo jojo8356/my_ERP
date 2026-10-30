@@ -1,7 +1,7 @@
 # Décisions — Stack de l'ERP
 
 - **`mes-choix.json`** : vos réponses au questionnaire (`../index.html`), source de vérité pour tous les développements.
-  Statut actuel : ⏳ en attente de vos réponses.
+  Statut actuel : ✅ réponses reçues le 30/10/2026, intégrées au CDC (`../CDC-ERP-CLI.md` v1.0, en attente de validation J0).
 - **`../CHOIX-STACK-ERP.md`** : la méthode (comment les grandes entreprises choisissent) + le questionnaire en version texte.
 
 ## Règle de travail

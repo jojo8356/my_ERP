@@ -15,6 +15,10 @@ Ouvrez **`index.html`** (artefact interactif) :
 
 Version texte : [`CHOIX-STACK-ERP.md`](CHOIX-STACK-ERP.md) · Vos réponses versionnées : [`decisions/`](decisions/)
 
+## 📄 Cahier des charges
+
+**[`CDC-ERP-CLI.md`](CDC-ERP-CLI.md)** — CDC complet v1.0 (ERP CLI Rust + PostgreSQL, conformité services informatiques & Vinted), en attente de validation (réponses au §20 + GO J0).
+
 ## Servir l'artefact en local
 
 ```bash

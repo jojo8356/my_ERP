@@ -1,8 +1,95 @@
 {
   "projet": "my_ERP",
-  "statut": "EN ATTENTE DES RÉPONSES DE L'UTILISATEUR",
-  "mode_emploi": "Ce fichier sera remplacé par l'export JSON produit par index.html (bouton 'Exporter JSON'). Tant qu'il contient ce statut, aucun choix n'est arrêté : ne pas démarrer de développement basé sur une stack supposée.",
-  "exporte_le": null,
-  "reponses": {},
-  "recommandation": []
+  "statut": "RÉPONSES REÇUES — intégrées au CDC (CDC-ERP-CLI.md), en attente de validation du CDC",
+  "exporte_le": "2026-10-30T19:28:09",
+  "reponses": {
+    "contexte": {
+      "secteur": "service",
+      "taille_entreprise": "Solo / TPE (<10)",
+      "probleme": "Perte de temps avec OpenConcerto et Dolibarr (trop de menus, navigation lente) ; volonté de créer d'abord un outil CLI pour soi-même",
+      "remplace": "Un ERP existant",
+      "horizon": "Outil interne durable"
+    },
+    "utilisateurs": {
+      "simultanes_depart": "1 (moi seul)",
+      "vises_3_ans": "×2",
+      "profils": ["Tous les employés"],
+      "acces": ["Ordinateur (bureau)"]
+    },
+    "modules": {
+      "souhaites": ["Comptabilité / Finance", "Facturation & devis", "Ventes / Commandes", "CRM (clients)", "Projets / Tâches", "E-commerce"],
+      "v1": ["Comptabilité / Finance", "Facturation & devis", "CRM (clients)", "E-commerce"],
+      "critique": "Facturation & devis",
+      "specificites": "Normes/lois des services informatiques et de la vente de vêtements sur Vinted (sources sûres demandées, intégré au CDC §11)"
+    },
+    "exigences_ponderees_sur_5": {
+      "securite_conformite": 4,
+      "performance": 1,
+      "scalabilite": 3,
+      "cout_faible_tco": 0,
+      "simplicite_maintenance": 5,
+      "vitesse_developpement": 4,
+      "design_ux": 4,
+      "integrations": 2
+    },
+    "architecture": {
+      "type": "Monolithe modulaire",
+      "mode": "Sur nos serveurs (on-premise)",
+      "multi": ["Multi-sociétés", "Multi-devises"]
+    },
+    "interface": {
+      "frontend": "TRANCHÉ PAR L'UTILISATEUR : CLI Rust (aucune GUI)",
+      "app_mobile": "Oui, plus tard",
+      "bibliotheque_ui": "Sans objet (CLI) — ergonomie terminal : aide contextuelle, complétion, raccourcis"
+    },
+    "backend": {
+      "technologie": "TRANCHÉ PAR L'UTILISATEUR : Rust (front CLI + back Rust)",
+      "api": "REST"
+    },
+    "donnees": {
+      "bdd": "PostgreSQL",
+      "sensibles": ["Données bancaires", "Données clients personnelles (RGPD)"],
+      "volume": "Petit (< 10 000 lignes / module)",
+      "sauvegardes": "Basique (quotidienne)"
+    },
+    "securite": {
+      "auth": ["E-mail + mot de passe", "Double facteur (2FA)", "Code par e-mail / lien magique"],
+      "roles": "Simple (admin / utilisateur)",
+      "audit": "Oui, indispensable (conformité)",
+      "conformites": ["RGPD", "Facturation électronique (obligatoire en France 2026-2027)", "Norme comptable / export expert-comptable", "ISO / secteur réglementé"]
+    },
+    "integrations": {
+      "outils": ["E-mail (envoi de factures)", "Banque / paiements (Stripe)", "Signature électronique", "SMS / notifications", "Excel (import/export)"],
+      "detail": null,
+      "reprise_donnees": null
+    },
+    "hebergement_devops": {
+      "hebergeur": "Serveur interne",
+      "devops": "Standard (+ CI/CD automatique, tests auto)",
+      "environnements": ["Test / staging + production"],
+      "maintenance": "Moi + l'assistant IA"
+    },
+    "equipe_budget_delais": {
+      "competences": ["JavaScript / TypeScript", "Python", "Java", "SQL", "Je délègue tout"],
+      "equipe_dev": "Moi seul (+ IA)",
+      "budget": "Minimal (le moins cher possible)",
+      "delai_v1": "Quelques semaines",
+      "langue": "Français"
+    },
+    "arbitrages": {
+      "priorite_absolue": "Que ce soit beau et agréable (pour un CLI : ergonomie, rapidité de navigation, raccourcis)",
+      "a_eviter": "GUI (aucune interface graphique)",
+      "impose": "Rust car CLI et sécuritaire au niveau des données et des fuites donc front: cli: rust, back: rust",
+      "notes": "Aller vite : navigation par chemins type URL mémorisables + le plus de raccourcis clavier intelligents possible",
+      "validation": "Je veux valider chaque grande étape avant que tu codes"
+    }
+  },
+  "decisions_derivees": [
+    "CLI Rust + backend Rust (contrainte imposée, prime sur la recommandation automatique React/Python de l'artefact)",
+    "Aucune GUI en v1 ; application mobile plus tard via l'API REST",
+    "Monolithe modulaire : core métier Rust partagé entre le CLI (v1) et un futur serveur REST",
+    "PostgreSQL, hébergement on-premise (serveur interne), sauvegardes quotidiennes",
+    "Facturation électronique : réception déjà obligatoire (depuis le 01/09/2026), émission TPE/PME au 01/09/2027 via plateforme agréée"
+  ],
+  "document_de_reference": "CDC-ERP-CLI.md"
 }
