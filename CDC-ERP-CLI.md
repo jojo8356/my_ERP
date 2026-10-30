@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Projet** | my_ERP — ERP personnel en ligne de commande (CLI), Rust + PostgreSQL |
-| **Version** | CDC v1.0 — 30 octobre 2026 — **EN ATTENTE DE VOTRE VALIDATION** |
+| **Version** | CDC v1.1 — 30 octobre 2026 — **réponses Q1–Q6 intégrées (§21), EN ATTENTE DE VOTRE GO J0** |
 | **Commanditaire / seul utilisateur v1** | Vous (TPE, secteur services) — validation exigée à chaque grande étape |
 | **Sources des choix** | `decisions/mes-choix.json` (vos réponses du 30/10/2026) |
 | **Méthode** | CDC construit comme dans les grandes entreprises : modèle **Volere** (exigences fonctionnelles / non-fonctionnelles / contraintes), qualité **ISO/IEC 25010:2023**, priorisation **MoSCoW**, critères d'acceptation **Given/When/Then**, traçabilité exigence → test (voir §2) |
@@ -317,12 +317,14 @@ prestataires signature/SMS seulement en v1.x. TCO 3 ans estimé : **quasi nul ho
 ## 20. Points ouverts — **à trancher par vous avant/pendant J0** (je ne coderai pas par-dessus ces trous)
 | # | Question | Pourquoi c'est bloquant | Options |
 |---|---|---|---|
-| Q1 | Statut juridique & TVA : micro-entreprise en franchise en base ? société ? Les deux activités sous le même statut ? | Détermine mentions de facture, TVA, FEC, e-facturation | À me dire / voir expert-comptable |
-| Q2 | Vinted : biens **personnels** ou **achat-revente** (ou les deux) ? | Détermine BIC/immatriculation et le calcul de marge (EF-VIN-02) | Personnel / Pro / Mixte (géré par article) |
-| Q3 | Services informatiques : TVA à l'encaissement ou option débits ? Clients particuliers, pros, UE ? | Règles de TVA du module compta | Encaissement (défaut) / Débits |
-| Q4 | Quelle plateforme agréée pour la facturation électronique (celle de l'expert-comptable ?) | INT-02, échéances 2026/2027 | À choisir à J2 au plus tard |
-| Q5 | Reprise des données : que garde-t-on d'OpenConcerto/Dolibarr (clients seuls ? historique complet ?) | Dimensionne la migration §13 | Clients / Clients+ouvert / Tout |
-| Q6 | Multi-sociétés : combien de sociétés réelles dès la v1 (services / vêtements séparés ?) | Paramétrage EF-SOC-01 et plan comptable | 1 / 2 / plus |
+| # | Question | Statut |
+|---|---|---|
+| Q1 | Statut juridique & TVA | ✅ **Tranché : micro-entreprise** (§21.1) |
+| Q2 | Vinted : personnel ou achat-revente | ✅ **Tranché : achat-revente** (§21.2) |
+| Q3 | TVA encaissement/débits, clients pros/particuliers | ✅ **Tranché après recherche : franchise en base tant qu'éligible, sinon encaissements** (§21.3) |
+| Q4 | Plateforme agréée e-factures (open source) | 🕓 **Reporté au jalon UI web**, shortlist open source (§21.4) |
+| Q5 | Reprise des données | ✅ **Exhaustive visée, outil reporté hors v1** (§21.5) |
+| Q6 | Multi-sociétés en v1 | ✅ **Oui** — 1 micro légale, 2 activités séparées (§21.6) |
 
 ---
 
@@ -332,6 +334,9 @@ prestataires signature/SMS seulement en v1.x. TCO 3 ans estimé : **quasi nul ho
 **MoSCoW** priorisation Must/Should/Could/Won't · **UAT/recette** validation par l'utilisateur final · **TCO** coût total sur la durée de vie.
 
 ## Annexe B — Sources (sûres, vérifiées le 30/10/2026)
+- Micro-entreprise, activités mixtes et seuils (régime micro 203 100 € / 83 600 € ; franchise en base TVA 37 500 € / 85 000 € en 2026) : entreprendre.service-public.fr (F23267) et synthèses conformes au CGI art. 50-0 et 293 B.
+- TVA des prestations de services (exigibilité à l'encaissement par défaut, option débits possible, biens à la livraison) : CGI art. 269 et guides fiscaux concordants.
+- Écosystème facturation électronique open source (Odoo, Axelor parmi les plateformes agréées DGFiP) : comparateurs du registre DGFiP, octobre 2026 — à revalider au choix définitif.
 - Facturation électronique, calendrier officiel (réception 01/09/2026 toutes entreprises ; émission TPE/PME 01/09/2027, plateforme agréée, nouvelles mentions) : economie.gouv.fr — « Tout savoir sur la facturation électronique pour les entreprises ».
 - Mentions obligatoires des factures de prestation de service (CGI 242 nonies A, pénalités, indemnité 40 €) : guides conformes au CGI/Code de commerce (Fiducial ; L-Expert-Comptable).
 - FEC et contrôles (format normé, art. A.47 AA-1 LPF) : service-public.fr (F34418).
@@ -344,4 +349,54 @@ prestataires signature/SMS seulement en v1.x. TCO 3 ans estimé : **quasi nul ho
 ## Annexe C — Traçabilité (principe)
 Chaque exigence `EF/ENF/SEC/RGPD/INT` de ce CDC sera reprise dans le dépôt avec : statut, jalon (§16), test associé, date de validation par vous. La matrice complète est générée au démarrage de J1.
 
-*Fin du CDC v1.0 — prochaine action : vos réponses au §20 + votre GO sur le J0.*
+## 21. Addendum du 30/10/2026 — vos réponses Q1–Q6 intégrées
+
+### 21.1 Q1 — Micro-entreprise (statut tranché)
+Une seule micro-entreprise (un seul SIREN/SIRET : on ne peut pas cumuler deux micro-entreprises), avec
+**activité mixte** : ventes de marchandises (achat-revente vêtements) + prestations de services informatiques.
+Conséquences pour l'ERP : (a) suivi du chiffre d'affaires **séparé par activité** avec les seuils 2026
+(activité mixte : CA global ≤ 203 100 € dont ≤ 83 600 € de prestations de services — seuils du régime micro) ;
+(b) mentions de facture du régime micro (§11.1) ; (c) tableau de bord « distance aux seuils » (nouvelle exigence
+**EF-CPT-06 (S)** : `erp /compta/seuils` affiche CA ventes, CA services, % des seuils micro et franchise TVA).
+
+### 21.2 Q2 — Vinted = achat-revente (mode professionnel dès la v1)
+EF-VIN-02 s'applique en mode **pro BIC** : chaque article a un prix d'achat, la marge est calculée nette de frais,
+les recettes alimentent le CA « ventes » de la micro-entreprise, alertes DAC7 (30 ventes / 2 000 €) activées par défaut.
+Le mode « biens personnels » reste possible par article (utile si vous vendez un jour vos propres affaires), mais
+**le défaut est PRO**. À valider avec l'expert-comptable : immatriculation et catégorie déclarative exactes.
+
+### 21.3 Q3 — TVA (recherché pour vous, clients pros ET particuliers)
+- **En micro-entreprise, tant que vous restez sous les seuils de franchise en base** (2026 : 37 500 € de CA services /
+  85 000 € de CA ventes, seuils majorés 41 250 € / 93 500 €), vous ne facturez **pas de TVA** : mention obligatoire
+  « TVA non applicable, art. 293 B du CGI ». Le débat encaissement/débits ne se pose donc pas aujourd'hui.
+- **Si vous devenez redevable de la TVA** (dépassement ou option), la règle légale par défaut est :
+  prestations de services = **TVA exigible à l'encaissement** (vous ne reversez que la TVA réellement encaissée —
+  le plus favorable pour votre trésorerie, surtout avec des particuliers qui ne récupèrent pas la TVA) ;
+  ventes de biens = exigible à la **livraison**. L'option « débits » (TVA dès la facture) n'a d'intérêt que si vos
+  clients pros veulent déduire leur TVA avant de vous payer : **non retenue par défaut**.
+- **Exigence ERP** : le moteur de TVA gère dès la v1 les deux mondes — mode *franchise* (0 %) et mode *TVA*
+  (taux par ligne, exigibilité différenciée services/biens, bascule documentée si franchissement de seuil),
+  et les deux clientèles : particulier (prix TTC affichés, facture sur demande/≥ 25 €) et pro (facture obligatoire,
+  TVA intracom. et autoliquidation UE si applicable).
+
+### 21.4 Q4 — Facturation électronique open source (reporté au jalon UI web, à votre demande)
+Décision différée, mais l'architecture la rend indolore : l'ERP génère les formats structurés (**Factur-X / UBL / CII**)
+et transmet via un **connecteur interchangeable** (`INT-02`) — le choix de la plateforme se fera quand vous ferez l'UI web,
+sans toucher au module Facturation. Pistes open source relevées (registre DGFiP évolutif, **à revalider au moment du choix**) :
+**Odoo** et **Axelor**, ERP open source figurant parmi les plateformes agréées, ou un connecteur API vers une plateforme
+agréée distincte si vous préférez garder cet ERP-ci. Rappel des échéances : réception déjà obligatoire (depuis le
+01/09/2026, donc à couvrir dès qu'un connecteur est branché), émission pour les micro/TPE au 01/09/2027.
+
+### 21.5 Q5 — Migration : tout garder, mais plus tard
+Objectif acté : reprise **exhaustive** (clients, historique, articles, pièces) « afin de ne rien perdre ».
+L'**outil de migration sort du périmètre v1** (reporté) ; en contrepartie, la v1 garantit : modèle de données complet,
+exports ouverts totaux (ENF-PORT-01) et identifiants d'origine conservables, pour que la migration future soit
+un simple import sans perte. Le §13 s'appliquera le jour venu (imports rejouables, rapport d'écarts).
+
+### 21.6 Q6 — Multi-sociétés : OUI, configuré juste juridiquement
+La fonction multi-sociétés (EF-SOC-01) est **activée dès la v1**. Configuration initiale conforme à votre statut :
+**1 société légale (votre micro-entreprise) avec 2 activités analytiques** — « Services informatiques » et
+« Achat-revente vêtements » — chacune avec ses séries de factures, son CA et ses seuils (§21.1), devises gérées
+(EF-SOC-02). Si vous créez un jour une vraie seconde société, le même mécanisme l'accueillera sans refonte.
+
+*Fin du CDC v1.1 — prochaine et dernière action avant code : votre **GO explicite sur le J0** (ou vos corrections). Ensuite J1 (socle CLI), validé par vous avant J2.*

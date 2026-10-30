@@ -1,6 +1,6 @@
 {
   "projet": "my_ERP",
-  "statut": "RÉPONSES REÇUES — intégrées au CDC (CDC-ERP-CLI.md), en attente de validation du CDC",
+  "statut": "CDC v1.1 — réponses complémentaires Q1–Q6 reçues le 30/10/2026, EN ATTENTE DU GO J0",
   "exporte_le": "2026-10-30T19:28:09",
   "reponses": {
     "contexte": {
@@ -13,12 +13,28 @@
     "utilisateurs": {
       "simultanes_depart": "1 (moi seul)",
       "vises_3_ans": "×2",
-      "profils": ["Tous les employés"],
-      "acces": ["Ordinateur (bureau)"]
+      "profils": [
+        "Tous les employés"
+      ],
+      "acces": [
+        "Ordinateur (bureau)"
+      ]
     },
     "modules": {
-      "souhaites": ["Comptabilité / Finance", "Facturation & devis", "Ventes / Commandes", "CRM (clients)", "Projets / Tâches", "E-commerce"],
-      "v1": ["Comptabilité / Finance", "Facturation & devis", "CRM (clients)", "E-commerce"],
+      "souhaites": [
+        "Comptabilité / Finance",
+        "Facturation & devis",
+        "Ventes / Commandes",
+        "CRM (clients)",
+        "Projets / Tâches",
+        "E-commerce"
+      ],
+      "v1": [
+        "Comptabilité / Finance",
+        "Facturation & devis",
+        "CRM (clients)",
+        "E-commerce"
+      ],
       "critique": "Facturation & devis",
       "specificites": "Normes/lois des services informatiques et de la vente de vêtements sur Vinted (sources sûres demandées, intégré au CDC §11)"
     },
@@ -35,7 +51,10 @@
     "architecture": {
       "type": "Monolithe modulaire",
       "mode": "Sur nos serveurs (on-premise)",
-      "multi": ["Multi-sociétés", "Multi-devises"]
+      "multi": [
+        "Multi-sociétés",
+        "Multi-devises"
+      ]
     },
     "interface": {
       "frontend": "TRANCHÉ PAR L'UTILISATEUR : CLI Rust (aucune GUI)",
@@ -48,29 +67,55 @@
     },
     "donnees": {
       "bdd": "PostgreSQL",
-      "sensibles": ["Données bancaires", "Données clients personnelles (RGPD)"],
+      "sensibles": [
+        "Données bancaires",
+        "Données clients personnelles (RGPD)"
+      ],
       "volume": "Petit (< 10 000 lignes / module)",
       "sauvegardes": "Basique (quotidienne)"
     },
     "securite": {
-      "auth": ["E-mail + mot de passe", "Double facteur (2FA)", "Code par e-mail / lien magique"],
+      "auth": [
+        "E-mail + mot de passe",
+        "Double facteur (2FA)",
+        "Code par e-mail / lien magique"
+      ],
       "roles": "Simple (admin / utilisateur)",
       "audit": "Oui, indispensable (conformité)",
-      "conformites": ["RGPD", "Facturation électronique (obligatoire en France 2026-2027)", "Norme comptable / export expert-comptable", "ISO / secteur réglementé"]
+      "conformites": [
+        "RGPD",
+        "Facturation électronique (obligatoire en France 2026-2027)",
+        "Norme comptable / export expert-comptable",
+        "ISO / secteur réglementé"
+      ]
     },
     "integrations": {
-      "outils": ["E-mail (envoi de factures)", "Banque / paiements (Stripe)", "Signature électronique", "SMS / notifications", "Excel (import/export)"],
+      "outils": [
+        "E-mail (envoi de factures)",
+        "Banque / paiements (Stripe)",
+        "Signature électronique",
+        "SMS / notifications",
+        "Excel (import/export)"
+      ],
       "detail": null,
       "reprise_donnees": null
     },
     "hebergement_devops": {
       "hebergeur": "Serveur interne",
       "devops": "Standard (+ CI/CD automatique, tests auto)",
-      "environnements": ["Test / staging + production"],
+      "environnements": [
+        "Test / staging + production"
+      ],
       "maintenance": "Moi + l'assistant IA"
     },
     "equipe_budget_delais": {
-      "competences": ["JavaScript / TypeScript", "Python", "Java", "SQL", "Je délègue tout"],
+      "competences": [
+        "JavaScript / TypeScript",
+        "Python",
+        "Java",
+        "SQL",
+        "Je délègue tout"
+      ],
       "equipe_dev": "Moi seul (+ IA)",
       "budget": "Minimal (le moins cher possible)",
       "delai_v1": "Quelques semaines",
@@ -89,7 +134,19 @@
     "Aucune GUI en v1 ; application mobile plus tard via l'API REST",
     "Monolithe modulaire : core métier Rust partagé entre le CLI (v1) et un futur serveur REST",
     "PostgreSQL, hébergement on-premise (serveur interne), sauvegardes quotidiennes",
-    "Facturation électronique : réception déjà obligatoire (depuis le 01/09/2026), émission TPE/PME au 01/09/2027 via plateforme agréée"
+    "Facturation électronique : réception déjà obligatoire (depuis le 01/09/2026), émission TPE/PME au 01/09/2027 via plateforme agréée",
+    "Micro-entreprise unique avec activité mixte (ventes + services) : seuils et TVA suivis séparément par activité dans l'ERP",
+    "Vinted = achat-revente professionnel (BIC) : marge, stock et DAC7 suivis en mode pro dès la v1",
+    "Outil de migration Dolibarr/OpenConcerto : reporté, mais aucune donnée ne doit être perdue le jour venu (exports ouverts, modèle complet)",
+    "Facturation électronique : choix de la plateforme différé au jalon UI web, connecteur conçu interchangeable dès la v1"
   ],
-  "document_de_reference": "CDC-ERP-CLI.md"
+  "document_de_reference": "CDC-ERP-CLI.md",
+  "reponses_complementaires_2026-10-30": {
+    "Q1_statut": "Micro-entreprise (micro-entrepreneur)",
+    "Q2_vinted": "Achat-revente de vêtements (activité commerciale BIC, dès le premier euro)",
+    "Q3_tva": "Tranché après recherche (voir CDC §21) : franchise en base de TVA tant qu'éligible ; si assujettissement, prestations de services à l'encaissement (défaut légal, favorable trésorerie), ventes de biens à la livraison. Clients pros ET particuliers gérés.",
+    "Q4_facturation_electronique": "Reporté au jalon de l'UI web ; exigence : solutions open source ou connecteur open-source-compatible (génération Factur-X/UBL dans l'ERP, transmission via plateforme agréée interchangeable). Shortlist à revalider à ce moment-là : Odoo / Axelor (ERP open source plateformes agréées) ou connecteur API vers plateforme agréée.",
+    "Q5_migration": "Objectif : reprise exhaustive (toute la base possible, ne rien perdre) MAIS outil de migration reporté à plus tard — hors v1.",
+    "Q6_multisocietes": "OUI — fonction multi-sociétés activée. Configuration initiale conforme au droit : 1 micro-entreprise légale, 2 activités (services informatiques / achat-revente vêtements) séparées analytiquement ; le multi-sociétés réel servira si une vraie société est créée plus tard."
+  }
 }
