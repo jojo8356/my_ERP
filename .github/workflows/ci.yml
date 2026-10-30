@@ -27,10 +27,11 @@ jobs:
         run: |
           export ERP_DONNEES_DIR=/tmp/erp-demo
           cargo run --quiet -- /clients nouveau --nom "Atelier Dupont" --type pro --email contact@example.fr
-          cargo run --quiet -- /factures nouvelle --client dupont --activite services --ligne "Maintenance informatique;2;500,00;2000"
-          cargo run --quiet -- /factures FA-2026-0001 valider
-          cargo run --quiet -- /factures FA-2026-0001 payer
-          cargo run --quiet -- /factures FA-2026-0001 | grep "payée"
+          NUM=$(cargo run --quiet -- /factures nouvelle --client dupont --activite services --ligne "Maintenance informatique;2;500,00;2000" | grep -oE "FA-[0-9]{4}-[0-9]{4}")
+          echo "Facture créée : $NUM"
+          cargo run --quiet -- /factures "$NUM" valider
+          cargo run --quiet -- /factures "$NUM" payer
+          cargo run --quiet -- /factures "$NUM" | grep "payée"
           cargo run --quiet -- /vinted nouveau --marque Zara --description "Veste" --taille M --composition "100 % coton" --prix-achat 8,00
           ID_ARTICLE=$(cargo run --quiet -- /vinted | awk 'NR==1 {print $1}')
           cargo run --quiet -- /vinted vendre "$ID_ARTICLE" --prix 25,00 --frais 2,00
