@@ -28,6 +28,12 @@ article h2{font-size:26px;margin:1.7em 0 .5em;padding-bottom:.25em;border-bottom
 article h3{font-size:20px;margin:1.4em 0 .4em;scroll-margin-top:80px} article h4{scroll-margin-top:80px}
 article p,article li{color:var(--ink)}
 article a{color:var(--accent)}
+.toc-inline{font-family:system-ui,sans-serif;font-size:15.5px;line-height:1.5}
+.toc-inline ol{margin:.4em 0;padding-left:1.3em}
+.toc-inline li{margin:5px 0}
+.toc-inline a{display:block;text-decoration:none;color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:8px 13px;transition:.15s}
+.toc-inline a:hover{border-color:var(--accent);color:var(--accent);transform:translateX(3px)}
+aside a{cursor:pointer;pointer-events:auto}
 article table{border-collapse:collapse;width:100%;font-size:14.5px;font-family:system-ui,sans-serif;line-height:1.5;margin:1em 0;display:block;overflow-x:auto}
 th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top} th{background:var(--soft)}
 code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.86em;background:var(--soft);padding:.1em .35em;border-radius:5px}
@@ -166,15 +172,7 @@ la recommandation automatique initiale (React/Python) est donc <strong>écartée
 </blockquote>
 <hr />
 <h2 id="table-des-matieres">Table des matières</h2>
-<ol>
-<li>Contexte, problème et objectifs mesurables — 2. Méthode &amp; gouvernance — 3. Parties prenantes</li>
-<li>Périmètre (dans / hors) — 5. Solution cible &amp; architecture — 6. Parcours de navigation CLI (votre exigence n°1)</li>
-<li>Exigences fonctionnelles par module — 8. Modèle de données — 9. Exigences non fonctionnelles (ISO 25010)</li>
-<li>Sécurité &amp; RGPD — 11. Conformité métier : services informatiques &amp; vente de vêtements (Vinted) — sources officielles</li>
-<li>Intégrations — 13. Migration / reprise des données — 14. Déploiement, DevOps, exploitation</li>
-<li>Stratégie de test &amp; recette — 16. Planning par jalons validés — 17. Budget &amp; TCO — 18. Risques</li>
-<li>Critères d'acceptation du projet — 20. Points ouverts à trancher — Annexes : glossaire, sources, traçabilité</li>
-</ol>
+<nav class="toc-inline"><ol><li><a href="#1-contexte-probleme-et-objectifs">1. Contexte, problème et objectifs</a></li><li><a href="#2-methode-gouvernance-facon-grande-entreprise-adaptee-a-1-personne-ia">2. Méthode &amp; gouvernance (façon grande entreprise, adaptée à 1 personne + IA)</a></li><li><a href="#3-parties-prenantes-et-roles">3. Parties prenantes et rôles</a></li><li><a href="#4-perimetre">4. Périmètre</a></li><li><a href="#5-solution-cible-architecture">5. Solution cible &amp; architecture</a></li><li><a href="#6-parcours-de-navigation-cli-votre-exigence-n1-aller-vite">6. Parcours de navigation CLI — votre exigence n°1 « aller vite »</a></li><li><a href="#7-exigences-fonctionnelles-extraits-normatifs-must-v1">7. Exigences fonctionnelles (extraits normatifs — Must = v1)</a></li><li><a href="#8-modele-de-donnees-conceptuel-a-detailler-au-jalon-j1">8. Modèle de données (conceptuel, à détailler au jalon J1)</a></li><li><a href="#9-exigences-non-fonctionnelles-isoiec-250102023-chiffrees-vos-ponderations-entre-parentheses">9. Exigences non fonctionnelles (ISO/IEC 25010:2023, chiffrées — vos pondérations entre parenthèses)</a></li><li><a href="#10-securite-rgpd">10. Sécurité &amp; RGPD</a></li><li><a href="#11-conformite-metier-lois-normes-sources-officielles-verifiees-le-30102026">11. Conformité métier — lois &amp; normes (sources officielles, vérifiées le 30/10/2026)</a></li><li><a href="#12-integrations">12. Intégrations</a></li><li><a href="#13-migration-reprise-depuis-openconcerto-dolibarr">13. Migration / reprise depuis OpenConcerto &amp; Dolibarr</a></li><li><a href="#14-deploiement-devops-exploitation">14. Déploiement, DevOps, exploitation</a></li><li><a href="#15-strategie-de-test-recette-votre-validation-a-chaque-jalon">15. Stratégie de test &amp; recette (votre validation à chaque jalon)</a></li><li><a href="#16-planning-indicatif-delai-vise-premiere-version-en-quelques-semaines-chaque-jalon-attend-votre-go">16. Planning indicatif (délai visé : première version en quelques semaines) — chaque jalon attend votre GO</a></li><li><a href="#17-budget-tco-budget-minimal">17. Budget &amp; TCO (budget « minimal »)</a></li><li><a href="#18-risques-principaux">18. Risques principaux</a></li><li><a href="#19-criteres-dacceptation-du-projet-le-cdc-est-rempli-si">19. Critères d'acceptation du projet (le CDC est « rempli » si…)</a></li><li><a href="#20-points-ouverts-a-trancher-par-vous-avantpendant-j0-je-ne-coderai-pas-par-dessus-ces-trous">20. Points ouverts — à trancher par vous avant/pendant J0 (je ne coderai pas par-dessus ces trous)</a></li><li><a href="#annexe-a-glossaire-court">Annexe A — Glossaire (court)</a></li><li><a href="#annexe-b-sources-sures-verifiees-le-30102026">Annexe B — Sources (sûres, vérifiées le 30/10/2026)</a></li><li><a href="#annexe-c-tracabilite-principe">Annexe C — Traçabilité (principe)</a></li><li><a href="#21-addendum-du-30102026-vos-reponses-q1q6-integrees">21. Addendum du 30/10/2026 — vos réponses Q1–Q6 intégrées</a></li></ol></nav>
 <hr />
 <h2 id="1-contexte-probleme-et-objectifs">1. Contexte, problème et objectifs</h2>
 <h3 id="11-contexte">1.1 Contexte</h3>
@@ -849,6 +847,8 @@ addEventListener('scroll',()=>{const h=document.documentElement;const p=h.scroll
  // section active dans le sommaire
  let cur='';$$('article h2,article h3').forEach(x=>{if(x.getBoundingClientRect().top<120)cur=x.id});
  $$('aside a').forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+cur));},{passive:true});
+// Sommaire cliquable : défilement doux + décalage sous la barre fixe, pour TOUS les liens d'ancre
+$$('a[href^="#"]').forEach(a=>a.addEventListener('click',e=>{const t=document.getElementById(a.getAttribute('href').slice(1));if(t){e.preventDefault();t.scrollIntoView({behavior:'smooth',block:'start'});history.replaceState(null,'',a.getAttribute('href'))}}));
 // Mode sombre / clair (mémorisé)
 const dark=localStorage.getItem('cdc_dark')==='1'; if(dark)document.body.classList.add('dark');
 function toggleDark(){document.body.classList.toggle('dark');localStorage.setItem('cdc_dark',document.body.classList.contains('dark')?'1':'0')}

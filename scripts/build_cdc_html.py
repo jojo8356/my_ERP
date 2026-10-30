@@ -42,6 +42,12 @@ article h2{font-size:26px;margin:1.7em 0 .5em;padding-bottom:.25em;border-bottom
 article h3{font-size:20px;margin:1.4em 0 .4em;scroll-margin-top:80px} article h4{scroll-margin-top:80px}
 article p,article li{color:var(--ink)}
 article a{color:var(--accent)}
+.toc-inline{font-family:system-ui,sans-serif;font-size:15.5px;line-height:1.5}
+.toc-inline ol{margin:.4em 0;padding-left:1.3em}
+.toc-inline li{margin:5px 0}
+.toc-inline a{display:block;text-decoration:none;color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:8px 13px;transition:.15s}
+.toc-inline a:hover{border-color:var(--accent);color:var(--accent);transform:translateX(3px)}
+aside a{cursor:pointer;pointer-events:auto}
 article table{border-collapse:collapse;width:100%;font-size:14.5px;font-family:system-ui,sans-serif;line-height:1.5;margin:1em 0;display:block;overflow-x:auto}
 th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top} th{background:var(--soft)}
 code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.86em;background:var(--soft);padding:.1em .35em;border-radius:5px}
@@ -62,6 +68,8 @@ addEventListener('scroll',()=>{const h=document.documentElement;const p=h.scroll
  // section active dans le sommaire
  let cur='';$$('article h2,article h3').forEach(x=>{if(x.getBoundingClientRect().top<120)cur=x.id});
  $$('aside a').forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+cur));},{passive:true});
+// Sommaire cliquable : défilement doux + décalage sous la barre fixe, pour TOUS les liens d'ancre
+$$('a[href^="#"]').forEach(a=>a.addEventListener('click',e=>{const t=document.getElementById(a.getAttribute('href').slice(1));if(t){e.preventDefault();t.scrollIntoView({behavior:'smooth',block:'start'});history.replaceState(null,'',a.getAttribute('href'))}}));
 // Mode sombre / clair (mémorisé)
 const dark=localStorage.getItem('cdc_dark')==='1'; if(dark)document.body.classList.add('dark');
 function toggleDark(){document.body.classList.toggle('dark');localStorage.setItem('cdc_dark',document.body.classList.contains('dark')?'1':'0')}
@@ -83,6 +91,27 @@ def main() -> None:
     md = markdown.Markdown(extensions=["tables", "fenced_code", "toc", "sane_lists"])
     body = md.convert(md_text)
     toc = md.toc
+    # Table des matières DANS l'article : le Markdown la contient en texte brut
+    # (liste numérotée non cliquable). On la régénère à partir des vrais titres
+    # H2 du document, avec leurs ancres réelles -> 100 % cliquable, toujours à jour.
+    h2s = [
+        (hid, re.sub(r"<[^>]+>", "", label).strip())
+        for hid, label in re.findall(r'<h2 id="([^"]+)">(.*?)</h2>', body)
+        if hid != "table-des-matieres"
+    ]
+    inline_toc = (
+        '<nav class="toc-inline"><ol>'
+        + "".join(f'<li><a href="#{hid}">{label}</a></li>' for hid, label in h2s)
+        + "</ol></nav>"
+    )
+    body, n = re.subn(
+        r'(<h2 id="table-des-matieres">.*?</h2>).*?(?=<hr\s*/?>|\s*<h2 )',
+        lambda m: m.group(1) + "\n" + inline_toc + "\n",
+        body,
+        flags=re.S,
+    )
+    if n == 0:
+        print("⚠️  Table des matières intégrée non trouvée : régénération sans remplacement")
     # Le premier H1 du document sert d'en-tête de page : on évite le doublon avec la barre.
     html = f"""<!DOCTYPE html>
 <html lang="fr">
