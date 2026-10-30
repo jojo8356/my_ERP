@@ -1,0 +1,12 @@
+[package]
+name = "my-erp"
+version = "0.1.0"
+edition = "2021"
+description = "ERP CLI en Rust — navigation par chemins, sans GUI (voir CDC-ERP-CLI.md)"
+license = "MIT"
+
+[dependencies]
+postgres = "0.19"
+
+[profile.release]
+opt-level = 3
