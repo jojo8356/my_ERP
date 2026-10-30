@@ -28,7 +28,10 @@ python3 -m http.server 8000
 
 ## 🖥️ V1 — ERP CLI en Rust (livrée, CI verte)
 
-Zéro GUI, zéro dépendance externe : navigation par **chemins type URL** et raccourcis,
+Zéro GUI. Une seule dépendance : [Chromat](https://github.com/jojo8356/chromat)
+(bibliothèque de couleurs terminal de l’auteur, elle-même sans dépendance — ADR-004),
+qui colore proprement toutes les impressions via `src/theme.rs`.
+Navigation par **chemins type URL** et raccourcis,
 comme exigé dans le [CDC](CDC-ERP-CLI.md). Modules v1 : CRM, devis/factures/avoirs,
 comptabilité (seuils micro, FEC), achat-revente Vinted (marges, alertes DAC7).
 

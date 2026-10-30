@@ -1,6 +1,7 @@
 //! Interface TUI (Terminal User Interface) — plein écran dans le terminal,
-//! toujours aucune GUI (CDC §6). Rust 100 % standard : codes ANSI pour
-//! l'affichage, `stty` pour le mode raw, lecture touche par touche.
+//! toujours aucune GUI (CDC §6). Chromat (`theme.rs`) pour toutes les
+//! couleurs ; séquences de contrôle du terminal (écran, curseur) gérées ici,
+//! `stty` pour le mode raw, lecture touche par touche.
 //!
 //! Lancement : `my-erp tui`
 //! Touches : ↑/↓ ou j/k naviguer · Tab changer de module · Entrée ouvrir
@@ -8,6 +9,7 @@
 
 use crate::domain::*;
 use crate::store::*;
+use crate::theme;
 use std::io::{Read, Write};
 
 pub const MODULES: [&str; 5] = ["Tableau de bord", "Clients", "Factures", "Vinted", "Comptabilité"];
@@ -141,11 +143,12 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
     // ── Cadre du titre ──────────────────────────────────────────────
     let bord = "─".repeat(LARG - 2);
     let titre = format!(" ERP — {societe_nom}");
-    s.push_str(&format!("\u{1b}[37m┌{bord}┐\u{1b}[0m\r\n"));
+    s.push_str(&format!("{}\r\n", theme::blanc(format!("┌{bord}┐"))));
     s.push_str(&format!(
-        "\u{1b}[37m│\u{1b}[0m\u{1b}[1;37m {:<largeur$} \u{1b}[0m\u{1b}[37m│\u{1b}[0m\r\n",
-        titre,
-        largeur = LARG - 4
+        "{} {} {}\r\n",
+        theme::blanc("│"),
+        theme::titre(format!("{:<largeur$}", titre, largeur = LARG - 4)),
+        theme::blanc("│")
     ));
     // ── Onglets alignés en colonnes de largeur égale, dans le même cadre ──
     // 5 modules, cellules de 18 caractères : 5×18 + 6 bordures = 96.
@@ -154,8 +157,8 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
         .map(|_| "─".repeat(CELL))
         .collect::<Vec<_>>()
         .join("┬");
-    s.push_str(&format!("\u{1b}[37m├{jonction_haut}┤\u{1b}[0m\r\n"));
-    let mut rangee = String::from("\u{1b}[37m│\u{1b}[0m");
+    s.push_str(&format!("{}\r\n", theme::blanc(format!("├{jonction_haut}┤"))));
+    let mut rangee = format!("{}", theme::blanc("│"));
     for (i, m) in MODULES.iter().enumerate() {
         let centre = {
             let texte = if i == vue.module { format!("▸ {m}") } else { m.to_string() };
@@ -165,20 +168,20 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
             format!("{}{}{}", " ".repeat(gauche), texte, " ".repeat(droite))
         };
         if i == vue.module {
-            // Menu sélectionné : écriture violet vif, sans surlignage de fond.
-            rangee.push_str(&format!("\u{1b}[1;95m{centre}\u{1b}[0m"));
+            // Menu sélectionné : violet en gras via Chromat, aucun fond.
+            rangee.push_str(&format!("{}", theme::selection(centre)));
         } else {
-            // Menu non sélectionné : écriture violette.
-            rangee.push_str(&format!("\u{1b}[35m{centre}\u{1b}[0m"));
+            // Menu non sélectionné : écriture violette via Chromat.
+            rangee.push_str(&format!("{}", theme::violet(centre)));
         }
-        rangee.push_str("\u{1b}[37m│\u{1b}[0m");
+        rangee.push_str(&format!("{}", theme::blanc("│")));
     }
     s.push_str(&format!("{rangee}\r\n"));
     let bas: String = (0..MODULES.len())
         .map(|_| "─".repeat(CELL))
         .collect::<Vec<_>>()
         .join("┴");
-    s.push_str(&format!("\u{1b}[37m└{bas}┘\u{1b}[0m\r\n"));
+    s.push_str(&format!("{}\r\n", theme::blanc(format!("└{bas}┘"))));
     if vue.aide {
         for l in [
             "AIDE — touches de la TUI",
@@ -203,14 +206,14 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
     } else {
         for (i, l) in contenu.lignes.iter().enumerate() {
             if i == vue.selection && vue.module != 0 && vue.module != 4 && !l.trim().is_empty() {
-                s.push_str(&format!("\u{1b}[1;95m▸ {}\u{1b}[0m\r\n", tronquer(l)));
+                s.push_str(&format!("{}\r\n", theme::selection(format!("▸ {}", tronquer(l)))));
             } else {
                 s.push_str(&format!(" {}\r\n", tronquer(l)));
             }
         }
     }
-    s.push_str(&format!("\u{1b}[37m{}\u{1b}[0m\r\n", "─".repeat(LARG)));
-    s.push_str(&format!("\u{1b}[37m{}\u{1b}[0m", tronquer(&vue.message)));
+    s.push_str(&format!("{}\r\n", theme::blanc("─".repeat(LARG))));
+    s.push_str(&format!("{}", theme::blanc(tronquer(&vue.message))));
     s
 }
 
@@ -395,10 +398,22 @@ mod tests {
         assert!(ecran.contains("┬"), "séparateur d'onglets manquant");
         assert!(ecran.contains("┴"), "bas des onglets manquant");
         assert!(ecran.contains("▸ Factures"), "onglet actif non marqué");
-        assert!(ecran.contains("\u{1b}[35m"), "écriture violette du menu manquante");
-        assert!(ecran.contains("\u{1b}[1;95m"), "écriture violet vif de la sélection manquante");
-        assert!(!ecran.contains("\u{1b}[7m"), "surlignage en vidéo inverse encore présent");
-        assert!(!ecran.contains("48;5;"), "fond coloré encore présent");
+        // Chromat convertit selon le terminal ; en truecolor, le CSS
+        // `violet` choisi dans theme.rs vaut RGB(238, 130, 238).
+        let _garde = crate::theme::VERROU_COULEUR.lock().unwrap();
+        chromat::set_color_level(chromat::ColorLevel::TrueColor);
+        let ecran_colore = rendre(&vue, &contenu, "Ma micro-entreprise");
+        chromat::reset_color_level();
+        assert!(
+            ecran_colore.contains("\u{1b}[38;2;238;130;238m"),
+            "couleur violette Chromat manquante"
+        );
+        assert!(!ecran_colore.contains("\u{1b}[7m"), "surlignage en vidéo inverse encore présent");
+        assert!(!ecran_colore.contains("\u{1b}[48;"), "fond coloré encore présent");
+        // Le code source de la TUI ne doit contenir aucun code couleur ANSI
+        // écrit à la main pour le menu ou la sélection (tout passe par Chromat).
+        assert!(!ecran.contains("\u{1b}[35m"));
+        assert!(!ecran.contains("\u{1b}[1;95m"));
     }
 
     #[test]

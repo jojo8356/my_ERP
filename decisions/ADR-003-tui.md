@@ -17,3 +17,9 @@ bénéficiera automatiquement de PostgreSQL quand il sera branché.
 
 ## Limites assumées
 Créations/éditions fines toujours en CLI (formulaires TUI = incrément ultérieur si demandé).
+
+## Amendement (ADR-004, 30/10/2026)
+Toutes les couleurs de la TUI proviennent désormais de Chromat via
+`src/theme.rs` (cadre/titre blancs, menu violet, sélection violette en gras,
+aucun fond ni surlignage). Seuls les contrôles du terminal (écran alternatif,
+curseur) restent en séquences directes, ce ne sont pas des couleurs.

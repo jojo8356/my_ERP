@@ -24,3 +24,11 @@ existant — exactement comme `Memoire` (tests).
 
 ## Alternative écartée
 Attendre un environnement avec accès crates.io : bloquait toute la V1.
+
+
+## Amendement (ADR-004, 30/10/2026)
+Le « zéro dépendance » ci-dessus est amendé : à la demande de l’utilisateur,
+l’ERP dépend désormais de **Chromat v0.1.1** pour toutes ses couleurs
+terminal. Chromat n’a elle-même aucune dépendance. Le reste de cet ADR
+(persistance fichier derrière le trait `Store`, PostgreSQL au jalon J5)
+reste inchangé.

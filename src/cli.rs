@@ -3,6 +3,7 @@
 
 use crate::domain::*;
 use crate::store::*;
+use crate::theme;
 use std::io::{BufRead, Write};
 
 pub struct App {
@@ -115,7 +116,7 @@ impl App {
         self.journaliser_action(&chemin_ref);
         match chemin_ref.as_slice() {
             [] => self.tableau_de_bord(sortie)?,
-            ["aide"] | ["?"] | ["help"] => writeln!(sortie, "{AIDE}").map_err(|e| e.to_string())?,
+            ["aide"] | ["?"] | ["help"] => writeln!(sortie, "{}", theme::violet(AIDE)).map_err(|e| e.to_string())?,
             ["quitter"] | ["q"] | ["exit"] => return Ok(false),
             ["clients", rest @ ..] => self.cmd_clients(rest, sortie)?,
             ["devis", rest @ ..] => self.cmd_documents(TypeDocument::Devis, rest, sortie)?,
@@ -148,7 +149,7 @@ impl App {
             .iter()
             .filter(|d| matches!(d.statut, StatutDocument::Valide | StatutDocument::PartiellementPaye))
             .collect();
-        writeln!(sortie, "┌─ {} — tableau de bord {}", societe.nom, annee).map_err(|e| e.to_string())?;
+        writeln!(sortie, "{}", theme::titre(format!("┌─ {} — tableau de bord {}", societe.nom, annee))).map_err(|e| e.to_string())?;
         writeln!(sortie, "│ CA ventes : {} · CA services : {}", format_eur(ventes), format_eur(services)).map_err(|e| e.to_string())?;
         writeln!(sortie, "│ Factures en attente de paiement : {}", impayes.len()).map_err(|e| e.to_string())?;
         for d in &impayes {
@@ -156,12 +157,12 @@ impl App {
             writeln!(sortie, "│   ! {} — reste {}", d.numero, format_eur(reste)).map_err(|e| e.to_string())?;
         }
         for a in &etat.alertes {
-            writeln!(sortie, "│ ⚠ {a}").map_err(|e| e.to_string())?;
+            writeln!(sortie, "{}", theme::alerte(format!("│ ⚠ {a}"))).map_err(|e| e.to_string())?;
         }
         if let Some(a) = self.alertes_dac7(annee)? {
-            writeln!(sortie, "│ ⚠ {a}").map_err(|e| e.to_string())?;
+            writeln!(sortie, "{}", theme::alerte(format!("│ ⚠ {a}"))).map_err(|e| e.to_string())?;
         }
-        writeln!(sortie, "└─ Tapez un chemin (/clients, /factures, /vinted, /compta/seuils) ou `aide`").map_err(|e| e.to_string())?;
+        writeln!(sortie, "{}", theme::violet("└─ Tapez un chemin (/clients, /factures, /vinted, /compta/seuils) ou `aide`")).map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -211,7 +212,7 @@ impl App {
                     tva_intracom: opt(&o, "tva").unwrap_or("").to_string(),
                     notes: opt(&o, "notes").unwrap_or("").to_string(),
                 })?;
-                writeln!(sortie, "✓ Client n°{} créé : {}", c.id, c.nom).map_err(|e| e.to_string())?;
+                writeln!(sortie, "{}", theme::succes(format!("✓ Client n°{} créé : {}", c.id, c.nom))).map_err(|e| e.to_string())?;
                 Ok(())
             }
             [recherche, "factures"] => {
@@ -317,7 +318,7 @@ impl App {
                     lignes,
                 )?;
                 self.store.journaliser("document.création", &doc.numero)?;
-                writeln!(sortie, "✓ {} créé : {} (brouillon) — validez avec : /{base} {} valider", type_doc.as_str(), doc.numero, doc.numero).map_err(|e| e.to_string())?;
+                writeln!(sortie, "{}", theme::succes(format!("✓ {} créé : {} (brouillon) — validez avec : /{base} {} valider", type_doc.as_str(), doc.numero, doc.numero))).map_err(|e| e.to_string())?;
                 Ok(())
             }
             [numero] => {
@@ -346,7 +347,7 @@ impl App {
                 }
                 let d = self.store.changer_statut(numero, StatutDocument::Valide)?;
                 self.store.journaliser("document.validation", numero)?;
-                writeln!(sortie, "✓ {} validée (figée, numérotation officielle)", d.numero).map_err(|e| e.to_string())?;
+                writeln!(sortie, "{}", theme::succes(format!("✓ {} validée (figée, numérotation officielle)", d.numero))).map_err(|e| e.to_string())?;
                 Ok(())
             }
             [numero, "transformer"] if type_doc == TypeDocument::Devis => {
@@ -361,7 +362,7 @@ impl App {
                 )?;
                 self.store.changer_statut(numero, StatutDocument::Accepte)?;
                 self.store.journaliser("devis.transformation", &format!("{numero} -> {}", f.numero))?;
-                writeln!(sortie, "✓ Devis {} transformé en facture {} (brouillon)", numero, f.numero).map_err(|e| e.to_string())?;
+                writeln!(sortie, "{}", theme::succes(format!("✓ Devis {} transformé en facture {} (brouillon)", numero, f.numero))).map_err(|e| e.to_string())?;
                 Ok(())
             }
             [numero, "payer", args @ ..] => {
@@ -378,7 +379,7 @@ impl App {
                 let moyen = args.get(2).map(|s| s.to_string()).unwrap_or_else(|| "virement".to_string());
                 let d = self.store.ajouter_paiement(numero, montant, &date, &moyen)?;
                 self.store.journaliser("paiement", &format!("{numero} {}", format_eur(montant)))?;
-                writeln!(sortie, "✓ Paiement enregistré sur {} — statut : {} (reste {})", d.numero, d.statut.as_str(), format_eur(reste_a_payer(d.totaux(regime).ttc, d.paye))).map_err(|e| e.to_string())?;
+                writeln!(sortie, "{}", theme::succes(format!("✓ Paiement enregistré sur {} — statut : {} (reste {})", d.numero, d.statut.as_str(), format_eur(reste_a_payer(d.totaux(regime).ttc, d.paye))))).map_err(|e| e.to_string())?;
                 Ok(())
             }
             [numero, "avoir"] => {
@@ -398,7 +399,7 @@ impl App {
                     .collect();
                 let a = self.store.creer_document(TypeDocument::Avoir, d.client_id, &aujourdhui(), "", &d.activite, lignes)?;
                 self.store.journaliser("avoir.création", &format!("{} pour {}", a.numero, numero))?;
-                writeln!(sortie, "✓ Avoir {} créé (brouillon) pour corriger {}", a.numero, numero).map_err(|e| e.to_string())?;
+                writeln!(sortie, "{}", theme::succes(format!("✓ Avoir {} créé (brouillon) pour corriger {}", a.numero, numero))).map_err(|e| e.to_string())?;
                 Ok(())
             }
             [numero, action] => Err(format!(
@@ -436,7 +437,7 @@ impl App {
                     date_achat: opt(&o, "date").unwrap_or(&aujourdhui()).to_string(),
                     statut: "en_stock".to_string(),
                 })?;
-                writeln!(sortie, "✓ Article n°{} ajouté : {} {} (achat {}) — composition : {}", a.id, a.marque, a.description, format_eur(a.prix_achat), a.composition).map_err(|e| e.to_string())?;
+                writeln!(sortie, "{}", theme::succes(format!("✓ Article n°{} ajouté : {} {} (achat {}) — composition : {}", a.id, a.marque, a.description, format_eur(a.prix_achat), a.composition))).map_err(|e| e.to_string())?;
                 Ok(())
             }
             ["vendre", id, args @ ..] => {
@@ -452,7 +453,7 @@ impl App {
                     plateforme: opt(&o, "plateforme").unwrap_or("Vinted").to_string(),
                 })?;
                 let a = self.store.article_par_id(article_id)?;
-                writeln!(sortie, "✓ Vente enregistrée : {} {} vendu {} — marge nette {}", a.marque, a.description, format_eur(v.prix_vente), format_eur(marge_nette(&a, &v))).map_err(|e| e.to_string())?;
+                writeln!(sortie, "{}", theme::succes(format!("✓ Vente enregistrée : {} {} vendu {} — marge nette {}", a.marque, a.description, format_eur(v.prix_vente), format_eur(marge_nette(&a, &v))))).map_err(|e| e.to_string())?;
                 Ok(())
             }
             ["stats"] => {
@@ -472,7 +473,7 @@ impl App {
                 writeln!(sortie, "Ventes totales : {} · marge nette cumulée : {}", ventes.len(), format_eur(total_marge)).map_err(|e| e.to_string())?;
                 writeln!(sortie, "Année {annee} : {nb} ventes, CA {}", format_eur(ca)).map_err(|e| e.to_string())?;
                 if let Some(a) = alerte_dac7(nb, ca) {
-                    writeln!(sortie, "⚠ {a}").map_err(|e| e.to_string())?;
+                    writeln!(sortie, "{}", theme::alerte(format!("⚠ {a}"))).map_err(|e| e.to_string())?;
                 }
                 Ok(())
             }
@@ -492,10 +493,10 @@ impl App {
                 writeln!(sortie, "  CA services : {}  (plafond micro services {})", format_eur(e.ca_services), format_eur(SEUILS_2026.ca_services_max)).map_err(|e| e.to_string())?;
                 writeln!(sortie, "  CA global   : {}  (plafond micro global {})", format_eur(e.ca_ventes + e.ca_services), format_eur(SEUILS_2026.ca_global_max)).map_err(|e| e.to_string())?;
                 if e.alertes.is_empty() {
-                    writeln!(sortie, "  ✓ Aucune alerte de seuil").map_err(|e| e.to_string())?;
+                    writeln!(sortie, "{}", theme::succes(format!("  ✓ Aucune alerte de seuil"))).map_err(|e| e.to_string())?;
                 }
                 for a in &e.alertes {
-                    writeln!(sortie, "  ⚠ {a}").map_err(|e| e.to_string())?;
+                    writeln!(sortie, "{}", theme::alerte(format!("  ⚠ {a}"))).map_err(|e| e.to_string())?;
                 }
                 Ok(())
             }
@@ -525,7 +526,7 @@ impl App {
                 match rest.get(1) {
                     Some(fichier) => {
                         std::fs::write(fichier, lignes.join("\n") + "\n").map_err(|e| format!("écriture du FEC : {e}"))?;
-                        writeln!(sortie, "✓ FEC écrit dans {fichier} ({} lignes) — à faire valider par l'expert-comptable", lignes.len()).map_err(|e| e.to_string())?;
+                        writeln!(sortie, "{}", theme::succes(format!("✓ FEC écrit dans {fichier} ({} lignes) — à faire valider par l'expert-comptable", lignes.len()))).map_err(|e| e.to_string())?;
                     }
                     None => {
                         for l in &lignes {
@@ -553,7 +554,7 @@ impl App {
             ["regime", r] => {
                 let regime = RegimeTva::from_str(r)?;
                 self.store.set_regime_tva(regime)?;
-                writeln!(sortie, "✓ Régime TVA : {}", regime.as_str()).map_err(|e| e.to_string())?;
+                writeln!(sortie, "{}", theme::succes(format!("✓ Régime TVA : {}", regime.as_str()))).map_err(|e| e.to_string())?;
                 Ok(())
             }
             _ => Err("usage : /societe [regime franchise|reel]".into()),
@@ -566,7 +567,7 @@ impl App {
                 let nb_clients = self.store.clients()?.len();
                 let nb_docs = self.store.documents(None)?.len();
                 let nb_articles = self.store.articles()?.len();
-                writeln!(sortie, "✓ Système sain — {nb_clients} clients, {nb_docs} documents, {nb_articles} articles").map_err(|e| e.to_string())?;
+                writeln!(sortie, "{}", theme::succes(format!("✓ Système sain — {nb_clients} clients, {nb_docs} documents, {nb_articles} articles"))).map_err(|e| e.to_string())?;
                 Ok(())
             }
             ["audit"] => {
@@ -605,10 +606,10 @@ pub fn parser_ligne(s: &str) -> Result<Ligne, String> {
 
 /// Boucle interactive (REPL) : prompts, raccourcis `g f`, `g c`, `g v`, `g d`, `?`, `q`.
 pub fn repl(app: &mut App, stdin: &mut dyn BufRead, sortie: &mut dyn Write) -> Result<(), String> {
-    writeln!(sortie, "ERP CLI — tapez un chemin (/factures), un raccourci (g f) ou `aide`. `q` pour quitter.").map_err(|e| e.to_string())?;
+    writeln!(sortie, "{}", theme::titre("ERP CLI — tapez un chemin (/factures), un raccourci (g f) ou `aide`. `q` pour quitter.")).map_err(|e| e.to_string())?;
     let _ = app.tableau_de_bord(sortie);
     loop {
-        write!(sortie, "erp › ").map_err(|e| e.to_string())?;
+        write!(sortie, "{}", theme::selection("erp › ")).map_err(|e| e.to_string())?;
         sortie.flush().map_err(|e| e.to_string())?;
         let mut ligne = String::new();
         if stdin.read_line(&mut ligne).map_err(|e| e.to_string())? == 0 {
@@ -625,7 +626,7 @@ pub fn repl(app: &mut App, stdin: &mut dyn BufRead, sortie: &mut dyn Write) -> R
         match app.executer(&commande, sortie) {
             Ok(true) => {}
             Ok(false) => break,
-            Err(e) => writeln!(sortie, "✗ {e}").map_err(|err| err.to_string())?,
+            Err(e) => writeln!(sortie, "{}", theme::erreur(format!("✗ {e}"))).map_err(|err| err.to_string())?,
         }
     }
     Ok(())

@@ -18,7 +18,7 @@ use std::process::ExitCode;
 
 fn ouvrir_store(args: &[String]) -> Result<Box<dyn Store>, String> {
     if args.iter().any(|a| a == "--memoire") {
-        eprintln!("(mode mémoire : données perdues à la fermeture — démonstration)");
+        eprintln!("{}", my_erp::theme::info("(mode mémoire : données perdues à la fermeture — démonstration)"));
         return Ok(Box::new(Memoire::new()));
     }
     let dossier = std::env::var("ERP_DONNEES_DIR")
@@ -32,7 +32,7 @@ fn main() -> ExitCode {
     let store = match ouvrir_store(&args) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("✗ {e}");
+            eprintln!("{}", my_erp::theme::erreur(format!("✗ {e}")));
             return ExitCode::FAILURE;
         }
     };
@@ -50,8 +50,8 @@ fn main() -> ExitCode {
         return match my_erp::tui::lancer(app.store.as_mut()) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("✗ TUI : {e}");
-                eprintln!("  (utilisez le mode interactif classique : lancez le binaire sans argument)");
+                eprintln!("{}", my_erp::theme::erreur(format!("✗ TUI : {e}")));
+                eprintln!("{}", my_erp::theme::info("  (utilisez le mode interactif classique : lancez le binaire sans argument)"));
                 ExitCode::FAILURE
             }
         };
@@ -63,7 +63,7 @@ fn main() -> ExitCode {
         match repl(&mut app, &mut lecteur, &mut sortie) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("✗ {e}");
+                eprintln!("{}", my_erp::theme::erreur(format!("✗ {e}")));
                 ExitCode::FAILURE
             }
         }
@@ -71,7 +71,7 @@ fn main() -> ExitCode {
         match app.executer_jetons(commande, &mut sortie) {
             Ok(_) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("✗ {e}");
+                eprintln!("{}", my_erp::theme::erreur(format!("✗ {e}")));
                 ExitCode::FAILURE
             }
         }

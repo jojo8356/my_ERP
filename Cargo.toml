@@ -5,8 +5,10 @@ edition = "2021"
 description = "ERP CLI en Rust — navigation par chemins, sans GUI (voir CDC-ERP-CLI.md)"
 license = "MIT"
 
-# Zéro dépendance externe (ADR-002) : compilation hors-ligne reproductible partout.
+# Seule dépendance : Chromat, la bibliothèque de couleurs terminal de
+# l'utilisateur (elle-même sans aucune dépendance). Voir ADR-004.
 [dependencies]
+chromat = { git = "https://github.com/jojo8356/chromat", tag = "v0.1.1" }
 
 [profile.release]
 opt-level = 3
