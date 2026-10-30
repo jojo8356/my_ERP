@@ -165,9 +165,11 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
             format!("{}{}{}", " ".repeat(gauche), texte, " ".repeat(droite))
         };
         if i == vue.module {
-            rangee.push_str(&format!("\u{1b}[1;37m{centre}\u{1b}[0m"));
+            // Menu sélectionné : écriture violet vif, sans surlignage de fond.
+            rangee.push_str(&format!("\u{1b}[1;95m{centre}\u{1b}[0m"));
         } else {
-            rangee.push_str(&centre);
+            // Menu non sélectionné : écriture violette.
+            rangee.push_str(&format!("\u{1b}[35m{centre}\u{1b}[0m"));
         }
         rangee.push_str("\u{1b}[37m│\u{1b}[0m");
     }
