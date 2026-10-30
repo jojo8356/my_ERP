@@ -23,6 +23,9 @@ pub const BLANC_RGB: (u8, u8, u8) = (255, 255, 255);
 /// (255 × 0,20 ≈ 51) sur les trois canaux.
 pub const SURLIGNAGE_BLANC_20_RGB: (u8, u8, u8) = (51, 51, 51);
 pub const VIOLET_RGB: (u8, u8, u8) = (238, 130, 238);
+/// Violet atténué des onglets inactifs : 70 % du violet actif, pour une
+/// hiérarchie lisible sans écraser l'onglet sélectionné.
+pub const VIOLET_INACTIF_RGB: (u8, u8, u8) = (167, 91, 167);
 pub const VERT_RGB: (u8, u8, u8) = (0, 128, 0);
 pub const ORANGE_RGB: (u8, u8, u8) = (255, 165, 0);
 pub const ROUGE_RGB: (u8, u8, u8) = (255, 0, 0);
