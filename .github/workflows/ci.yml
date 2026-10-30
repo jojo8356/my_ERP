@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compiler (zéro dépendance, hors-ligne)
+      - name: Compiler (Chromat v0.1.1 via Git, voir ADR-004)
         run: |
           set +e
           cargo build > /tmp/build.log 2>&1; code=$?
