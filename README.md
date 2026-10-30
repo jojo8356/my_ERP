@@ -25,3 +25,21 @@ Version texte : [`CHOIX-STACK-ERP.md`](CHOIX-STACK-ERP.md) · Vos réponses vers
 python3 -m http.server 8000
 # puis http://localhost:8000
 ```
+
+## 🖥️ V1 — ERP CLI en Rust (livrée, CI verte)
+
+Zéro GUI, zéro dépendance externe : navigation par **chemins type URL** et raccourcis,
+comme exigé dans le [CDC](CDC-ERP-CLI.md). Modules v1 : CRM, devis/factures/avoirs,
+comptabilité (seuils micro, FEC), achat-revente Vinted (marges, alertes DAC7).
+
+```bash
+cargo build --release            # binaire : target/release/my-erp
+./target/release/my-erp          # mode interactif (erp ›), tapez « aide »
+./target/release/my-erp /clients nouveau --nom "Atelier Dupont" --type pro
+./target/release/my-erp /factures   # commande unique, scriptable
+bash scripts/scenario-demo.sh    # démonstration complète commentée
+```
+
+Données persistées dans `./donnees/etat.tsv` (dossier modifiable via
+`ERP_DONNEES_DIR`, sauvegarde = copie du dossier). PostgreSQL : prévu comme
+autre implémentation du trait `Store` (voir `decisions/ADR-002-persistance-v1.md`).

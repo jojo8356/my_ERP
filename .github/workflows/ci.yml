@@ -4,10 +4,6 @@ on:
   push:
   pull_request:
 
-permissions:
-  contents: read
-  issues: write
-
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -29,19 +25,3 @@ jobs:
           export ERP_DONNEES_DIR=/tmp/erp-demo
           bash scripts/scenario-demo.sh > /tmp/scenario.log 2>&1; code=$?
           tail -30 /tmp/scenario.log; exit $code
-      - name: Publier le diagnostic sur l'issue #1 (si échec)
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          { echo '## cargo build'; echo '```'; tail -70 /tmp/build.log 2>/dev/null; echo '```';
-            echo '## cargo test'; echo '```'; tail -70 /tmp/tests.log 2>/dev/null; echo '```';
-            echo '## scénario'; echo '```'; tail -70 /tmp/scenario.log 2>/dev/null; echo '```'; } > /tmp/diag.md
-          gh issue comment 1 --repo "${{ github.repository }}" --body-file /tmp/diag.md || true
-
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Clippy (informatif)
-        run: rustup component add clippy >/dev/null 2>&1; cargo clippy 2>&1 | tail -5 || true
