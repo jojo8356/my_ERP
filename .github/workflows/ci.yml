@@ -4,15 +4,25 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Compiler (zéro dépendance, hors-ligne)
-        run: cargo build --verbose
+        run: |
+          set +e
+          cargo build > /tmp/build.log 2>&1; code=$?
+          tail -5 /tmp/build.log; exit $code
       - name: Tests unitaires et métier
-        run: cargo test --verbose
+        run: |
+          set +e
+          cargo test > /tmp/tests.log 2>&1; code=$?
+          tail -5 /tmp/tests.log; exit $code
       - name: Scénario complet (persistance fichier, process séparés)
         run: |
           export ERP_DONNEES_DIR=/tmp/erp-demo
@@ -35,3 +45,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Clippy (informatif)
         run: rustup component add clippy >/dev/null 2>&1; cargo clippy 2>&1 | tail -5 || true
+
+      - name: Publier le diagnostic sur l'issue #1 (si échec)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          { echo '## cargo build'; echo '```'; tail -70 /tmp/build.log 2>/dev/null; echo '```';
+            echo '## cargo test'; echo '```'; tail -70 /tmp/tests.log 2>/dev/null; echo '```'; } > /tmp/diag.md
+          gh issue comment 1 --repo "${{ github.repository }}" --body-file /tmp/diag.md || true
