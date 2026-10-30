@@ -26,10 +26,15 @@ pub const VIOLET_RGB: (u8, u8, u8) = (238, 130, 238);
 /// Violet atténué des onglets inactifs : 70 % du violet actif, pour une
 /// hiérarchie lisible sans écraser l'onglet sélectionné.
 pub const VIOLET_INACTIF_RGB: (u8, u8, u8) = (167, 91, 167);
-pub const VERT_RGB: (u8, u8, u8) = (0, 128, 0);
-pub const ORANGE_RGB: (u8, u8, u8) = (255, 165, 0);
-pub const ROUGE_RGB: (u8, u8, u8) = (255, 0, 0);
-pub const BLEU_RGB: (u8, u8, u8) = (30, 144, 255);
+/// Couleurs sémantiques recalées pour fond sombre : les verts/oranges/
+/// rouges/bleus CSS de base sont trop sombres ou trop saturés sur noir
+/// et vibrent contre le violet. On utilise une même échelle tonale
+/// claire et désaturée (niveau « 400 » des design systems modernes) :
+/// luminosité homogène, contraste lisible, aucune couleur primaire pure.
+pub const VERT_RGB: (u8, u8, u8) = (74, 222, 128); // succès — #4ADE80
+pub const ORANGE_RGB: (u8, u8, u8) = (251, 191, 36); // alerte — #FBBF24
+pub const ROUGE_RGB: (u8, u8, u8) = (248, 113, 113); // erreur — #F87171
+pub const BLEU_RGB: (u8, u8, u8) = (96, 165, 250); // info — #60A5FA
 
 /// Texte blanc (cadres, séparateurs, libellés neutres).
 pub fn blanc(texte: impl Into<String>) -> StyledString {
@@ -53,22 +58,22 @@ pub fn selection(texte: impl Into<String>) -> StyledString {
 
 /// Succès (créations, validations, paiements, contrôles réussis).
 pub fn succes(texte: impl Into<String>) -> StyledString {
-    texte.into().green()
+    texte.into().fg(VERT_RGB)
 }
 
 /// Point d'attention (alertes de seuils, impayés, DAC7).
 pub fn alerte(texte: impl Into<String>) -> StyledString {
-    texte.into().orange()
+    texte.into().fg(ORANGE_RGB)
 }
 
 /// Erreur affichée à l'utilisateur.
 pub fn erreur(texte: impl Into<String>) -> StyledString {
-    texte.into().red().bold()
+    texte.into().fg(ROUGE_RGB).bold()
 }
 
 /// Information secondaire ou aide contextuelle.
 pub fn info(texte: impl Into<String>) -> StyledString {
-    texte.into().dodgerblue()
+    texte.into().fg(BLEU_RGB)
 }
 
 /// Chromat conserve le niveau de couleur dans un état global au processus.
@@ -90,6 +95,10 @@ mod tests {
         let rendu_violet = violet("menu").to_string();
         let rendu_selection = selection("actif").to_string();
         let rendu_titre = titre("titre").to_string();
+        let rendu_succes = succes("ok").to_string();
+        let rendu_alerte = alerte("attention").to_string();
+        let rendu_erreur = erreur("erreur").to_string();
+        let rendu_info = info("info").to_string();
         reset_color_level();
 
         // CSS `violet` = RGB(238, 130, 238), émis en truecolor par Chromat.
@@ -98,6 +107,11 @@ mod tests {
         assert!(rendu_selection.contains("\u{1b}[1m"), "gras manquant : {rendu_selection}");
         assert!(rendu_titre.contains("\u{1b}[38;2;255;255;255m"), "{rendu_titre}");
         // Aucun style du thème ne doit produire de fond coloré.
+        // Sémantiques fond sombre : échelle tonale claire homogène.
+        assert!(rendu_succes.contains("\u{1b}[38;2;74;222;128m"), "{rendu_succes}");
+        assert!(rendu_alerte.contains("\u{1b}[38;2;251;191;36m"), "{rendu_alerte}");
+        assert!(rendu_erreur.contains("\u{1b}[38;2;248;113;113m"), "{rendu_erreur}");
+        assert!(rendu_info.contains("\u{1b}[38;2;96;165;250m"), "{rendu_info}");
         assert!(!rendu_violet.contains("\u{1b}[48;"));
         assert!(!rendu_titre.contains("\u{1b}[48;"));
     }

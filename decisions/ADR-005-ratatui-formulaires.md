@@ -65,3 +65,12 @@ Formulaires à une ligne de document (désignation/quantité/prix/TVA) ;
 les documents multi-lignes restent créables en CLI. Édition d'objets
 existants : via les actions dédiées (valider, payer, vendre) ; pas
 encore de formulaire d'édition complète.
+
+## Correction palette (30/10/2026)
+Le vert CSS de base (0,128,0) utilisé pour les succès était trop sombre
+et saturé pour le fond noir : il vibrait contre le violet. Conformément
+aux règles des thèmes sombres (variantes plus claires et désaturées des
+couleurs sémantiques, luminosité homogène, contraste lisible), toute
+l'échelle sémantique de `theme.rs` passe en tons « 400 » : succès
+#4ADE80, alerte #FBBF24, erreur #F87171, info #60A5FA — le vert clair
+reste le complémentaire naturel du violet, sans l'écraser.
