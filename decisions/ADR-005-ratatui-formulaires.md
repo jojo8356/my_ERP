@@ -40,9 +40,11 @@ Ratatui utilise ses propres styles : il ne consomme pas les chaînes ANSI
 de Chromat. La palette RGB reste centralisée dans `src/theme.rs`
 (constantes `*_RGB`) et la TUI l'applique avec le style validé :
 cadre/titre blancs, menu violet, sélection violette **en gras sur
-surlignage blanc à 20 %** (demande utilisateur du 30/10/2026 ; en
-terminal, sans transparence, cela vaut un fond RGB 51,51,51 sur fond
-noir). Le CLI continue d'utiliser directement Chromat (ADR-004).
+surlignage blanc à 20 % avec padding 6 (largeur) / 2 (hauteur)**
+(demandes utilisateur du 30/10/2026 ; en terminal, sans transparence,
+le fond vaut RGB 51,51,51 sur fond noir et le padding est rendu par
+les onglets dédiés de `dessiner_onglets`). Le CLI continue d'utiliser
+directement Chromat (ADR-004).
 
 ## Conséquences
 

@@ -19,8 +19,8 @@ use crossterm::{execute, ExecutableCommand};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Tabs, Wrap};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
 use std::io::{self, Stdout};
 
@@ -602,7 +602,7 @@ fn zone_centree(pourcent_x: u16, pourcent_y: u16, zone: Rect) -> Rect {
 fn dessiner(frame: &mut Frame, vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) {
     let zones = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Min(1), Constraint::Length(2)])
+        .constraints([Constraint::Length(3), Constraint::Length(5), Constraint::Min(1), Constraint::Length(2)])
         .split(frame.area());
 
     // Titre
@@ -611,17 +611,10 @@ fn dessiner(frame: &mut Frame, vue: &VueTui, contenu: &ContenuModule, societe_no
         zones[0],
     );
 
-    // Onglets des modules (cadre blanc, écriture violette, actif violet gras)
-    let titres: Vec<Line> = MODULES.iter().map(|m| Line::from(*m)).collect();
-    frame.render_widget(
-        Tabs::new(titres)
-            .select(vue.module)
-            .style(style_violet())
-            .highlight_style(style_surlignage())
-            .divider("│")
-            .block(Block::default().borders(Borders::ALL).border_style(style_blanc())),
-        zones[1],
-    );
+    // Onglets des modules : rendu dédié pour donner au surlignage de
+    // l'onglet actif un padding horizontal de 6 et vertical de 2
+    // (équivalent terminal du padding CSS demandé, voir dessiner_onglets).
+    dessiner_onglets(frame, zones[1], vue.module);
 
     // Contenu du module
     let bloc = Block::default()
@@ -678,6 +671,43 @@ fn dessiner(frame: &mut Frame, vue: &VueTui, contenu: &ContenuModule, societe_no
     }
     if let Some(form) = &vue.formulaire {
         dessiner_formulaire(frame, form);
+    }
+}
+
+/// Onglets rendus à la main : Ratatui `Tabs` ne sait pas entourer le
+/// surlignage d'un padding. Équivalent terminal du padding CSS demandé
+/// (6 en largeur, 2 en hauteur) : 6 espaces de chaque côté du libellé
+/// actif, et une rangée surlignée au-dessus et en dessous (la zone fait
+/// 5 rangées : bordure, padding, libellés, padding, bordure).
+fn dessiner_onglets(frame: &mut Frame, zone: Rect, actif: usize) {
+    let bloc = Block::default().borders(Borders::ALL).border_style(style_blanc());
+    let interieur = bloc.inner(zone);
+    frame.render_widget(bloc, zone);
+    let rangees = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1), Constraint::Length(1)])
+        .split(interieur);
+    for (rangee, zone_rangee) in rangees.iter().enumerate() {
+        let libelles = rangee == 1;
+        let mut spans: Vec<Span> = Vec::new();
+        for (i, titre) in MODULES.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::styled("│", style_blanc()));
+            }
+            if i == actif {
+                let largeur = titre.chars().count() + 12; // 6 espaces de padding par côté
+                if libelles {
+                    spans.push(Span::styled(format!("      {titre}      "), style_surlignage()));
+                } else {
+                    spans.push(Span::styled(" ".repeat(largeur), style_surlignage()));
+                }
+            } else if libelles {
+                spans.push(Span::styled(*titre, style_violet()));
+            } else {
+                spans.push(Span::raw(" ".repeat(titre.chars().count())));
+            }
+        }
+        frame.render_widget(Paragraph::new(Line::from(spans)), *zone_rangee);
     }
 }
 
@@ -1068,6 +1098,13 @@ mod tests {
                 .iter()
                 .any(|c| c.bg == fond && c.modifier.contains(Modifier::BOLD)),
             "onglet/ligne sélectionné sans surlignage blanc 20 % en gras"
+        );
+        // Padding vertical : la rangée au-dessus des libellés d'onglets
+        // (rangée 4 : titre 0-2, bordure des onglets 3) est surlignée aussi.
+        let cellules = terminal.backend().buffer().content();
+        assert!(
+            cellules[4 * 110..5 * 110].iter().any(|c| c.bg == fond),
+            "padding vertical du surlignage d'onglet absent"
         );
     }
 
