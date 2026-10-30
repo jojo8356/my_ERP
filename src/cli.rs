@@ -501,28 +501,8 @@ impl App {
                 Ok(())
             }
             ["fec"] | ["fec", ..] => {
-                // FEC simplifié : écritures dérivées des paiements (journal banque / ventes).
-                let regime = self.store.societe()?.regime;
-                let mut lignes = vec![
-                    "JournalCode|JournalLib|EcritureNum|EcritureDate|CompteNum|CompteLib|CompAuxNum|CompAuxLib|PieceRef|PieceDate|EcritureLib|Debit|Credit|EcritureLet|DateLet|ValidDate|Montantdevise|Idevise"
-                        .to_string(),
-                ];
-                for d in self.store.documents(Some(TypeDocument::Facture))? {
-                    let client = self.store.client_par_id(d.client_id)?;
-                    for p in self.store.paiements(d.id)? {
-                        let m = format!("{},{:02}", p.montant.abs() / 100, p.montant.abs() % 100);
-                        let date_compacte = p.date_paiement.replace('-', "");
-                        lignes.push(format!(
-                            "BQ|Banque|{}|{}|512000|Banque|||{}|{}|Paiement {}|{}|0,00|||||EUR",
-                            d.numero, date_compacte, d.numero, date_compacte, client.nom, m
-                        ));
-                        lignes.push(format!(
-                            "BQ|Banque|{}|{}|411000|Clients|{}|{}|{}|{}|Paiement {}|0,00|{}|||||EUR",
-                            d.numero, date_compacte, client.id, client.nom, d.numero, date_compacte, client.nom, m
-                        ));
-                    }
-                    let _ = regime;
-                }
+                // Génération partagée avec la TUI (formulaire d'export FEC).
+                let lignes = generer_fec(self.store.as_mut())?;
                 match rest.get(1) {
                     Some(fichier) => {
                         std::fs::write(fichier, lignes.join("\n") + "\n").map_err(|e| format!("écriture du FEC : {e}"))?;

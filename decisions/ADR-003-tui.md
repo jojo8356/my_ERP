@@ -23,3 +23,7 @@ Toutes les couleurs de la TUI proviennent désormais de Chromat via
 `src/theme.rs` (cadre/titre blancs, menu violet, sélection violette en gras,
 aucun fond ni surlignage). Seuls les contrôles du terminal (écran alternatif,
 curseur) restent en séquences directes, ce ne sont pas des couleurs.
+
+## Remplacement (ADR-005, 30/10/2026)
+La technique de cette ADR (ANSI maison, `stty`) est remplacée par
+Ratatui + Crossterm avec formulaires interactifs : voir ADR-005.

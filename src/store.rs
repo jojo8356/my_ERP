@@ -129,6 +129,32 @@ pub trait Store {
 
 // ------------------------------------------------------------ Implémentation mémoire
 
+/// Génère les lignes du FEC simplifié (en-tête + écritures des paiements).
+/// Partagé par le CLI (`/compta fec`) et la TUI (formulaire d'export, ADR-005) :
+/// écritures banque/client dérivées des paiements enregistrés.
+pub fn generer_fec(store: &mut dyn Store) -> Resultat<Vec<String>> {
+    let mut lignes = vec![
+        "JournalCode|JournalLib|EcritureNum|EcritureDate|CompteNum|CompteLib|CompAuxNum|CompAuxLib|PieceRef|PieceDate|EcritureLib|Debit|Credit|EcritureLet|DateLet|ValidDate|Montantdevise|Idevise"
+            .to_string(),
+    ];
+    for d in store.documents(Some(TypeDocument::Facture))? {
+        let client = store.client_par_id(d.client_id)?;
+        for p in store.paiements(d.id)? {
+            let m = format!("{},{:02}", p.montant.abs() / 100, p.montant.abs() % 100);
+            let date_compacte = p.date_paiement.replace('-', "");
+            lignes.push(format!(
+                "BQ|Banque|{}|{}|512000|Banque|||{}|{}|Paiement {}|{}|0,00|||||EUR",
+                d.numero, date_compacte, d.numero, date_compacte, client.nom, m
+            ));
+            lignes.push(format!(
+                "BQ|Banque|{}|{}|411000|Clients|{}|{}|{}|{}|Paiement {}|0,00|{}|||||EUR",
+                d.numero, date_compacte, client.id, client.nom, d.numero, date_compacte, client.nom, m
+            ));
+        }
+    }
+    Ok(lignes)
+}
+
 #[derive(Default)]
 pub struct Memoire {
     pub(crate) societe: Option<Societe>,

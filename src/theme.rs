@@ -12,6 +12,17 @@
 
 use chromat::{Colorize, NamedColors, StyledString};
 
+/// Palette partagée avec Ratatui (ADR-005) : la TUI ne consomme pas les
+/// chaînes ANSI de Chromat, elle applique ces mêmes valeurs RGB à ses
+/// styles. Le CLI, lui, passe directement par les fonctions Chromat
+/// ci-dessous. Aucun fond coloré n'est défini : styles = écriture seule.
+pub const BLANC_RGB: (u8, u8, u8) = (255, 255, 255);
+pub const VIOLET_RGB: (u8, u8, u8) = (238, 130, 238);
+pub const VERT_RGB: (u8, u8, u8) = (0, 128, 0);
+pub const ORANGE_RGB: (u8, u8, u8) = (255, 165, 0);
+pub const ROUGE_RGB: (u8, u8, u8) = (255, 0, 0);
+pub const BLEU_RGB: (u8, u8, u8) = (30, 144, 255);
+
 /// Texte blanc (cadres, séparateurs, libellés neutres).
 pub fn blanc(texte: impl Into<String>) -> StyledString {
     texte.into().white()

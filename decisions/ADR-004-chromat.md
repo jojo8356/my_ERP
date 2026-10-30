@@ -44,3 +44,9 @@ couleurs et Chromat ne les gère pas.
 - Des tests verrouillent le rendu truecolor de Chromat
   (violet RGB(238, 130, 238), blanc, gras, absence de fond) et son
   comportement sans couleur.
+
+## Précision (ADR-005, 30/10/2026)
+Après migration Ratatui, la TUI applique la palette RGB centralisée dans
+`theme.rs` à ses propres styles (Ratatui ne consomme pas les chaînes ANSI
+de Chromat) ; le CLI continue d'utiliser Chromat directement. Aucun fond
+coloré dans les deux cas.

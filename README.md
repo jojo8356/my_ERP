@@ -28,9 +28,10 @@ python3 -m http.server 8000
 
 ## 🖥️ V1 — ERP CLI en Rust (livrée, CI verte)
 
-Zéro GUI. Une seule dépendance : [Chromat](https://github.com/jojo8356/chromat)
-(bibliothèque de couleurs terminal de l’auteur, elle-même sans dépendance — ADR-004),
-qui colore proprement toutes les impressions via `src/theme.rs`.
+Zéro GUI. Couleurs : [Chromat](https://github.com/jojo8356/chromat)
+(bibliothèque de l’auteur, ADR-004) pilote le CLI via `src/theme.rs` ;
+la TUI utilise **Ratatui + Crossterm** (ADR-005) avec la même palette,
+et des **formulaires interactifs** pour chaque création/action.
 Navigation par **chemins type URL** et raccourcis,
 comme exigé dans le [CDC](CDC-ERP-CLI.md). Modules v1 : CRM, devis/factures/avoirs,
 comptabilité (seuils micro, FEC), achat-revente Vinted (marges, alertes DAC7).
@@ -38,7 +39,7 @@ comptabilité (seuils micro, FEC), achat-revente Vinted (marges, alertes DAC7).
 ```bash
 cargo build --release            # binaire : target/release/my-erp
 ./target/release/my-erp          # mode interactif (erp ›), tapez « aide »
-./target/release/my-erp tui     # interface TUI plein écran (Tab, ↑↓, v, p, q)
+./target/release/my-erp tui     # TUI Ratatui : Tab modules, ↑↓ naviguer, f = formulaires (client, facture, devis, paiement, article, vente, société, FEC), n = nouveau, v valider, p payer, q quitter
 ./target/release/my-erp /clients nouveau --nom "Atelier Dupont" --type pro
 ./target/release/my-erp /factures   # commande unique, scriptable
 bash scripts/scenario-demo.sh    # démonstration complète commentée
