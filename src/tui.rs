@@ -1,7 +1,7 @@
 //! Interface TUI Ratatui + Crossterm (ADR-005) — plein écran dans le
 //! terminal, toujours aucune GUI (CDC §6). Chromat reste la référence
 //! couleurs du projet : la TUI applique la palette RGB définie dans
-//! `theme.rs` aux styles Ratatui ; aucun fond coloré, écriture seule.
+//! `theme.rs` aux styles Ratatui ; sélection surlignée blanc 20 % en gras.
 //!
 //! Lancement : `my-erp tui`
 //! Touches : Tab module · ↑↓ naviguer · f formulaires · n nouveau (selon le
@@ -557,6 +557,15 @@ fn style_selection() -> Style {
     style_violet().add_modifier(Modifier::BOLD)
 }
 
+/// Sélection visible : écriture violette en gras sur surlignage blanc 20 %
+/// (équivalent RGB d'un blanc à 20 % sur fond noir, Ratatui ne gérant pas
+/// la transparence). Utilisé pour l'onglet actif, la ligne et le choix de
+/// menu sélectionnés.
+fn style_surlignage() -> Style {
+    let (r, g, b) = theme::SURLIGNAGE_BLANC_20_RGB;
+    style_selection().bg(Color::Rgb(r, g, b))
+}
+
 fn style_message(message: &str) -> Style {
     if message.starts_with('✓') {
         style_rgb(theme::VERT_RGB)
@@ -608,7 +617,7 @@ fn dessiner(frame: &mut Frame, vue: &VueTui, contenu: &ContenuModule, societe_no
         Tabs::new(titres)
             .select(vue.module)
             .style(style_violet())
-            .highlight_style(style_selection())
+            .highlight_style(style_surlignage())
             .divider("│")
             .block(Block::default().borders(Borders::ALL).border_style(style_blanc())),
         zones[1],
@@ -645,7 +654,7 @@ fn dessiner(frame: &mut Frame, vue: &VueTui, contenu: &ContenuModule, societe_no
             etat.select(Some(vue.selection.min(contenu.lignes.len() - 1)));
         }
         frame.render_stateful_widget(
-            List::new(items).block(bloc).highlight_style(style_selection()).highlight_symbol("▸ "),
+            List::new(items).block(bloc).highlight_style(style_surlignage()).highlight_symbol("▸ "),
             zones[2],
             &mut etat,
         );
@@ -713,7 +722,7 @@ fn dessiner_menu_formulaires(frame: &mut Frame, choix: usize) {
     frame.render_stateful_widget(
         List::new(items)
             .block(Block::default().title(" Formulaires — Entrée : ouvrir · Échap : fermer ").borders(Borders::ALL).border_style(style_blanc()).title_style(style_titre()))
-            .highlight_style(style_selection())
+            .highlight_style(style_surlignage())
             .highlight_symbol("▸ "),
         zone,
         &mut etat,
@@ -1046,11 +1055,20 @@ mod tests {
         assert!(ecran.contains("FA-2026-0001"));
         assert!(ecran.contains("Ma micro-entreprise"));
         assert!(ecran.contains("Tableau de bord"));
-        // Aucun style Ratatui de la TUI ne doit définir de fond coloré.
+        // Sélection : surlignage blanc 20 % (RGB 51,51,51) et gras.
         let backend = TestBackend::new(110, 32);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| dessiner(f, &vue, &contenu, "Ma micro-entreprise")).unwrap();
-        assert!(terminal.backend().buffer().content().iter().all(|c| c.bg == Color::Reset));
+        let fond = Color::Rgb(51, 51, 51);
+        assert!(
+            terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .any(|c| c.bg == fond && c.modifier.contains(Modifier::BOLD)),
+            "onglet/ligne sélectionné sans surlignage blanc 20 % en gras"
+        );
     }
 
     #[test]

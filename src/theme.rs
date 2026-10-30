@@ -15,8 +15,13 @@ use chromat::{Colorize, NamedColors, StyledString};
 /// Palette partagée avec Ratatui (ADR-005) : la TUI ne consomme pas les
 /// chaînes ANSI de Chromat, elle applique ces mêmes valeurs RGB à ses
 /// styles. Le CLI, lui, passe directement par les fonctions Chromat
-/// ci-dessous. Aucun fond coloré n'est défini : styles = écriture seule.
+/// ci-dessous. Seul fond autorisé : le surlignage blanc à 20 % de la
+/// sélection, demandé explicitement par l'utilisateur (voir ci-dessous).
 pub const BLANC_RGB: (u8, u8, u8) = (255, 255, 255);
+/// Équivalent terminal d'un blanc à 20 % d'opacité sur fond noir :
+/// Ratatui/ANSI ne gèrent pas la transparence, donc 20 % de blanc
+/// (255 × 0,20 ≈ 51) sur les trois canaux.
+pub const SURLIGNAGE_BLANC_20_RGB: (u8, u8, u8) = (51, 51, 51);
 pub const VIOLET_RGB: (u8, u8, u8) = (238, 130, 238);
 pub const VERT_RGB: (u8, u8, u8) = (0, 128, 0);
 pub const ORANGE_RGB: (u8, u8, u8) = (255, 165, 0);

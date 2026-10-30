@@ -50,3 +50,7 @@ Après migration Ratatui, la TUI applique la palette RGB centralisée dans
 `theme.rs` à ses propres styles (Ratatui ne consomme pas les chaînes ANSI
 de Chromat) ; le CLI continue d'utiliser Chromat directement. Aucun fond
 coloré dans les deux cas.
+
+Précision ultérieure (ADR-005) : l'utilisateur a ensuite demandé un
+surlignage blanc à 20 % pour la sélection de la TUI, qui s'ajoute au
+violet gras ; le CLI reste sans fond.
