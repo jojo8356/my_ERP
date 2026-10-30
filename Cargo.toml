@@ -5,8 +5,8 @@ edition = "2021"
 description = "ERP CLI en Rust — navigation par chemins, sans GUI (voir CDC-ERP-CLI.md)"
 license = "MIT"
 
+# Zéro dépendance externe (ADR-002) : compilation hors-ligne reproductible partout.
 [dependencies]
-postgres = "0.19"
 
 [profile.release]
 opt-level = 3

@@ -4,74 +4,34 @@ on:
   push:
   pull_request:
 
-permissions:
-  contents: read
-  issues: write
-
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compiler
+      - name: Compiler (zéro dépendance, hors-ligne)
+        run: cargo build --verbose
+      - name: Tests unitaires et métier
+        run: cargo test --verbose
+      - name: Scénario complet (persistance fichier, process séparés)
         run: |
-          set +e
-          (rustc --version; cargo --version; cargo build) > /tmp/build.log 2>&1
-          code=$?
-          { echo '## cargo build'; echo '```'; tail -60 /tmp/build.log; echo '```'; } > /tmp/diag-build.md
-          tail -20 /tmp/build.log
-          exit $code
-      - name: Tests (sortie versée au résumé du run en cas d'échec)
-        run: |
-          set +e
-          cargo test -- --nocapture > /tmp/tests.log 2>&1
-          code=$?
-          { echo '## Résultats cargo test'; echo '```'; tail -80 /tmp/tests.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          { echo '## cargo test'; echo '```'; tail -80 /tmp/tests.log; echo '```'; } > /tmp/diag-tests.md
-          exit $code
-      - name: Fumée CLI (mode mémoire)
-        run: |
-          cargo run --quiet -- --memoire /clients "nouveau" --nom "Atelier Dupont" --type pro --email contact@example.fr
-          cargo run --quiet -- --memoire /compta seuils
-      - name: Publier le diagnostic sur l'issue #1 (si échec)
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cat /tmp/diag-build.md /tmp/diag-tests.md > /tmp/diag.md 2>/dev/null; if [ ! -s /tmp/diag.md ]; then echo '## (aucun diagnostic)' > /tmp/diag.md; fi
-          gh issue comment 1 --repo "${{ github.repository }}" --body-file /tmp/diag.md || true
-
-  postgres:
-    # Non bloquant : le téléchargement de l'image PostgreSQL peut échouer
-    # selon l'environnement d'exécution, sans rapport avec le code.
-    continue-on-error: true
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: erp
-          POSTGRES_PASSWORD: erp
-          POSTGRES_DB: erp
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U erp"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
-      - name: Test d'intégration PostgreSQL (connexion + schéma)
-        env:
-          ERP_DATABASE_URL: postgres://erp:erp@localhost:5432/erp
-        run: cargo run --quiet -- /admin sante
+          export ERP_DONNEES_DIR=/tmp/erp-demo
+          cargo run --quiet -- /clients nouveau --nom "Atelier Dupont" --type pro --email contact@example.fr
+          cargo run --quiet -- /factures nouvelle --client dupont --activite services --ligne "Maintenance informatique;2;500,00;2000"
+          cargo run --quiet -- /factures FA-2026-0001 valider
+          cargo run --quiet -- /factures FA-2026-0001 payer
+          cargo run --quiet -- /factures FA-2026-0001 | grep "payée"
+          cargo run --quiet -- /vinted nouveau --marque Zara --description "Veste" --taille M --composition "100 % coton" --prix-achat 8,00
+          ID_ARTICLE=$(cargo run --quiet -- /vinted | awk 'NR==1 {print $1}')
+          cargo run --quiet -- /vinted vendre "$ID_ARTICLE" --prix 25,00 --frais 2,00
+          cargo run --quiet -- /vinted stats | grep "marge nette"
+          cargo run --quiet -- /compta seuils | grep "CA global"
+          cargo run --quiet -- /compta fec | head -3
+          test -f /tmp/erp-demo/etat.tsv && echo "persistance OK"
 
   clippy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Installer clippy (composant rustup)
-        run: rustup component add clippy || true
       - name: Clippy (informatif)
-        run: cargo clippy -- -D warnings || true
+        run: rustup component add clippy >/dev/null 2>&1; cargo clippy 2>&1 | tail -5 || true

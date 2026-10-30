@@ -131,15 +131,28 @@ pub trait Store {
 
 #[derive(Default)]
 pub struct Memoire {
-    societe: Option<Societe>,
-    clients: Vec<Client>,
-    documents: Vec<Document>,
-    paiements: Vec<Paiement>,
-    articles: Vec<Article>,
-    ventes: Vec<Vente>,
-    audit_log: Vec<(String, String, String)>,
-    sequences: HashMap<String, u32>,
-    prochain_id: i64,
+    pub(crate) societe: Option<Societe>,
+    pub(crate) clients: Vec<Client>,
+    pub(crate) documents: Vec<Document>,
+    pub(crate) paiements: Vec<Paiement>,
+    pub(crate) articles: Vec<Article>,
+    pub(crate) ventes: Vec<Vente>,
+    pub(crate) audit_log: Vec<(String, String, String)>,
+    pub(crate) sequences: HashMap<String, u32>,
+    pub(crate) prochain_id: i64,
+}
+
+/// Photographie complète de l'état (pour la persistance fichier, ADR-002).
+pub struct Etat {
+    pub societe: Option<Societe>,
+    pub clients: Vec<Client>,
+    pub documents: Vec<Document>,
+    pub paiements: Vec<Paiement>,
+    pub articles: Vec<Article>,
+    pub ventes: Vec<Vente>,
+    pub audit_log: Vec<(String, String, String)>,
+    pub sequences: HashMap<String, u32>,
+    pub prochain_id: i64,
 }
 
 impl Memoire {
@@ -153,6 +166,32 @@ impl Memoire {
         let i = self.prochain_id;
         self.prochain_id += 1;
         i
+    }
+
+    pub fn snapshot(&self) -> Etat {
+        Etat {
+            societe: self.societe.clone(),
+            clients: self.clients.clone(),
+            documents: self.documents.clone(),
+            paiements: self.paiements.clone(),
+            articles: self.articles.clone(),
+            ventes: self.ventes.clone(),
+            audit_log: self.audit_log.clone(),
+            sequences: self.sequences.clone(),
+            prochain_id: self.prochain_id,
+        }
+    }
+
+    pub fn restaurer(&mut self, e: Etat) {
+        self.societe = e.societe;
+        self.clients = e.clients;
+        self.documents = e.documents;
+        self.paiements = e.paiements;
+        self.articles = e.articles;
+        self.ventes = e.ventes;
+        self.audit_log = e.audit_log;
+        self.sequences = e.sequences;
+        self.prochain_id = e.prochain_id;
     }
 }
 

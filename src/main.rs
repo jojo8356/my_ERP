@@ -5,14 +5,15 @@
 //!   erp /factures              commande unique (scriptable, sortie propre)
 //!   erp /clients nouveau --nom "Dupont" --type pro
 //!
-//! Base de données : PostgreSQL via `ERP_DATABASE_URL`
-//! (ex. postgres://user:pass@localhost:5432/erp). Sans cette variable, ou avec
-//! `--memoire`, le mode mémoire sert à la démonstration et aux tests.
+//! Données : dossier local (ADR-002), par défaut `./donnees`,
+//! modifiable via `ERP_DONNEES_DIR`. `--memoire` = démonstration sans persistance.
+//! PostgreSQL arrivera comme autre implémentation du trait `Store` (CDC §5.1).
 
 use my_erp::cli::{repl, App};
-use my_erp::pg::PgStore;
+use my_erp::fichier::Fichier;
 use my_erp::store::{Memoire, Store};
 use std::io::{BufReader, Stdin};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn ouvrir_store(args: &[String]) -> Result<Box<dyn Store>, String> {
@@ -20,14 +21,10 @@ fn ouvrir_store(args: &[String]) -> Result<Box<dyn Store>, String> {
         eprintln!("(mode mémoire : données perdues à la fermeture — démonstration)");
         return Ok(Box::new(Memoire::new()));
     }
-    match std::env::var("ERP_DATABASE_URL") {
-        Ok(url) if !url.is_empty() => Ok(Box::new(PgStore::connect(&url)?)),
-        _ => {
-            eprintln!("(aucune base configurée : mode mémoire. Pour PostgreSQL :");
-            eprintln!("  ERP_DATABASE_URL=postgres://user:pass@localhost:5432/erp erp …)");
-            Ok(Box::new(Memoire::new()))
-        }
-    }
+    let dossier = std::env::var("ERP_DONNEES_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("donnees"));
+    Ok(Box::new(Fichier::ouvrir(&dossier)?))
 }
 
 fn main() -> ExitCode {
