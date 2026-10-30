@@ -38,7 +38,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat /tmp/diag-build.md /tmp/diag-tests.md > /tmp/diag.md 2>/dev/null || echo '## (aucun diagnostic)' > /tmp/diag.md
+          cat /tmp/diag-build.md /tmp/diag-tests.md > /tmp/diag.md 2>/dev/null; if [ ! -s /tmp/diag.md ]; then echo '## (aucun diagnostic)' > /tmp/diag.md; fi
           gh issue comment 1 --repo "${{ github.repository }}" --body-file /tmp/diag.md || true
 
   postgres:
