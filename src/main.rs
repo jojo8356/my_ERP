@@ -56,7 +56,7 @@ fn main() -> ExitCode {
             }
         }
     } else {
-        match app.executer(&commande.join(" "), &mut sortie) {
+        match app.executer_jetons(commande, &mut sortie) {
             Ok(_) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("✗ {e}");

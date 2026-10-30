@@ -92,7 +92,12 @@ Format d'une ligne : \"désignation;quantité;prix unitaire HT;taux TVA en point
 
 impl App {
     pub fn executer(&mut self, commande_brute: &str, sortie: &mut dyn Write) -> Result<bool, String> {
-        let mut jetons = tokeniser(commande_brute);
+        self.executer_jetons(tokeniser(commande_brute), sortie)
+    }
+
+    /// Comme `executer`, mais avec les arguments déjà découpés (préserve les
+    /// valeurs multi-mots passées entre guillemets par le shell).
+    pub fn executer_jetons(&mut self, mut jetons: Vec<String>, sortie: &mut dyn Write) -> Result<bool, String> {
         if jetons.is_empty() {
             return self.tableau_de_bord(sortie).map(|_| true);
         }
