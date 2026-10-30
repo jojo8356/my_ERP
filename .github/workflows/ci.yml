@@ -26,7 +26,13 @@ jobs:
       - name: Installer Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Compiler
-        run: cargo build --verbose
+        run: |
+          set +e
+          cargo build > /tmp/build.log 2>&1
+          code=$?
+          grep -E "^error|^warning: unused" -A 4 /tmp/build.log | head -60 | sed 's/%/%25/g; s/\r//g' | while IFS= read -r l; do echo "::error::$l"; done
+          tail -20 /tmp/build.log
+          exit $code
       - name: Tests (sortie versée au résumé du run en cas d'échec)
         run: |
           set +e
