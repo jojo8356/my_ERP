@@ -25,28 +25,18 @@ jobs:
           tail -5 /tmp/tests.log; exit $code
       - name: Scénario complet (persistance fichier, process séparés)
         run: |
+          set +e
           export ERP_DONNEES_DIR=/tmp/erp-demo
-          cargo run --quiet -- /clients nouveau --nom "Atelier Dupont" --type pro --email contact@example.fr
-          NUM=$(cargo run --quiet -- /factures nouvelle --client dupont --activite services --ligne "Maintenance informatique;2;500,00;2000" | grep -oE "FA-[0-9]{4}-[0-9]{4}")
-          echo "Facture créée : $NUM"
-          cargo run --quiet -- /factures "$NUM" valider
-          cargo run --quiet -- /factures "$NUM" payer
-          cargo run --quiet -- /factures "$NUM" | grep "payée"
-          cargo run --quiet -- /vinted nouveau --marque Zara --description "Veste" --taille M --composition "100 % coton" --prix-achat 8,00
-          ID_ARTICLE=$(cargo run --quiet -- /vinted | awk 'NR==1 {print $1}')
-          cargo run --quiet -- /vinted vendre "$ID_ARTICLE" --prix 25,00 --frais 2,00
-          cargo run --quiet -- /vinted stats | grep "marge nette"
-          cargo run --quiet -- /compta seuils | grep "CA global"
-          cargo run --quiet -- /compta fec | head -3
-          test -f /tmp/erp-demo/etat.tsv && echo "persistance OK"
-
+          bash scripts/scenario-demo.sh > /tmp/scenario.log 2>&1; code=$?
+          tail -30 /tmp/scenario.log; exit $code
       - name: Publier le diagnostic sur l'issue #1 (si échec)
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           { echo '## cargo build'; echo '```'; tail -70 /tmp/build.log 2>/dev/null; echo '```';
-            echo '## cargo test'; echo '```'; tail -70 /tmp/tests.log 2>/dev/null; echo '```'; } > /tmp/diag.md
+            echo '## cargo test'; echo '```'; tail -70 /tmp/tests.log 2>/dev/null; echo '```';
+            echo '## scénario'; echo '```'; tail -70 /tmp/scenario.log 2>/dev/null; echo '```'; } > /tmp/diag.md
           gh issue comment 1 --repo "${{ github.repository }}" --body-file /tmp/diag.md || true
 
   clippy:
