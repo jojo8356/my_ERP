@@ -138,19 +138,45 @@ const LARG: usize = 96;
 pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> String {
     let mut s = String::new();
     s.push_str("\u{1b}[H\u{1b}[2J"); // curseur maison + effacer
-    let titre = format!(" ERP — {societe_nom} ");
-    s.push_str(&format!("\u{1b}[1;44m {:<LARG$} \u{1b}[0m\r\n", titre));
-    // Barre de modules
-    let mut barre = String::new();
+    // ── Cadre du titre ──────────────────────────────────────────────
+    let bord = "─".repeat(LARG - 2);
+    let titre = format!(" ERP — {societe_nom}");
+    s.push_str(&format!("\u{1b}[35m┌{bord}┐\u{1b}[0m\r\n"));
+    s.push_str(&format!(
+        "\u{1b}[35m│\u{1b}[0m\u{1b}[1;45m {:<largeur$} \u{1b}[0m\u{1b}[35m│\u{1b}[0m\r\n",
+        titre,
+        largeur = LARG - 4
+    ));
+    // ── Onglets alignés en colonnes de largeur égale, dans le même cadre ──
+    // 5 modules, cellules de 18 caractères : 5×18 + 6 bordures = 96.
+    const CELL: usize = 18;
+    let jonction_haut: String = (0..MODULES.len())
+        .map(|_| "─".repeat(CELL))
+        .collect::<Vec<_>>()
+        .join("┬");
+    s.push_str(&format!("\u{1b}[35m├{jonction_haut}┤\u{1b}[0m\r\n"));
+    let mut rangee = String::from("\u{1b}[35m│\u{1b}[0m");
     for (i, m) in MODULES.iter().enumerate() {
+        let centre = {
+            let texte = if i == vue.module { format!("▸ {m}") } else { m.to_string() };
+            let n = texte.chars().count();
+            let gauche = (CELL - n) / 2;
+            let droite = CELL - n - gauche;
+            format!("{}{}{}", " ".repeat(gauche), texte, " ".repeat(droite))
+        };
         if i == vue.module {
-            barre.push_str(&format!("\u{1b}[1;33m[ {m} ]\u{1b}[0m "));
+            rangee.push_str(&format!("\u{1b}[1;33;44m{centre}\u{1b}[0m"));
         } else {
-            barre.push_str(&format!("  {m}   "));
+            rangee.push_str(&centre);
         }
+        rangee.push_str("\u{1b}[35m│\u{1b}[0m");
     }
-    s.push_str(&format!("{barre}\r\n"));
-    s.push_str(&format!("{}\r\n", "─".repeat(LARG)));
+    s.push_str(&format!("{rangee}\r\n"));
+    let bas: String = (0..MODULES.len())
+        .map(|_| "─".repeat(CELL))
+        .collect::<Vec<_>>()
+        .join("┴");
+    s.push_str(&format!("\u{1b}[35m└{bas}┘\u{1b}[0m\r\n"));
     if vue.aide {
         for l in [
             "AIDE — touches de la TUI",
@@ -174,14 +200,14 @@ pub fn rendre(vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) -> Strin
         s.push_str("(aucun élément — créez-en via le CLI, puis r pour rafraîchir)\r\n");
     } else {
         for (i, l) in contenu.lignes.iter().enumerate() {
-            if i == vue.selection && vue.module != 0 && vue.module != 4 {
+            if i == vue.selection && vue.module != 0 && vue.module != 4 && !l.trim().is_empty() {
                 s.push_str(&format!("\u{1b}[7m {:<LARG$} \u{1b}[0m\r\n", tronquer(l)));
             } else {
                 s.push_str(&format!(" {}\r\n", tronquer(l)));
             }
         }
     }
-    s.push_str(&format!("{}\r\n", "─".repeat(LARG)));
+    s.push_str(&format!("\u{1b}[35m{}\u{1b}[0m\r\n", "─".repeat(LARG)));
     s.push_str(&format!("\u{1b}[2m{}\u{1b}[0m", tronquer(&vue.message)));
     s
 }
@@ -362,6 +388,11 @@ mod tests {
         assert!(ecran.contains("Factures"));
         assert!(ecran.contains("FA-2026-0001"));
         assert!(ecran.contains("Ma micro-entreprise"));
+        // Cadre du titre + onglets alignés en colonnes égales
+        assert!(ecran.contains("┌"), "coin du cadre manquant");
+        assert!(ecran.contains("┬"), "séparateur d'onglets manquant");
+        assert!(ecran.contains("┴"), "bas des onglets manquant");
+        assert!(ecran.contains("▸ Factures"), "onglet actif non marqué");
     }
 
     #[test]
