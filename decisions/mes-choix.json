@@ -1,0 +1,8 @@
+{
+  "projet": "my_ERP",
+  "statut": "EN ATTENTE DES RÉPONSES DE L'UTILISATEUR",
+  "mode_emploi": "Ce fichier sera remplacé par l'export JSON produit par index.html (bouton 'Exporter JSON'). Tant qu'il contient ce statut, aucun choix n'est arrêté : ne pas démarrer de développement basé sur une stack supposée.",
+  "exporte_le": null,
+  "reponses": {},
+  "recommandation": []
+}

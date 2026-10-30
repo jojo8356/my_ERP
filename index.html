@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mon ERP — Choix de Stack : Questionnaire & Décisions</title>
+<style>
+  :root{--bg:#0f172a;--card:#ffffff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--accent:#2563eb;--accent2:#7c3aed;--ok:#059669;--warn:#d97706;--soft:#eff6ff;--radius:16px}
+  *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f1f5f9;color:var(--ink);line-height:1.55}
+  header{background:linear-gradient(135deg,var(--bg),#1e3a8a 60%,var(--accent2));color:#fff;padding:36px 20px 28px}
+  .wrap{max-width:1020px;margin:0 auto;padding:0 18px}
+  header h1{margin:0 0 8px;font-size:clamp(24px,4vw,38px)} header p{margin:0;opacity:.92;max-width:760px}
+  .badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.badge{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:4px 10px;border-radius:999px;font-size:13px}
+  nav{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 10px rgba(0,0,0,.04)}
+  nav .wrap{display:flex;gap:8px;align-items:center;padding:10px 18px;flex-wrap:wrap}
+  button,.btn{cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink);padding:9px 14px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none;display:inline-block}
+  button:hover,.btn:hover{border-color:var(--accent);color:var(--accent)} button.primary{background:var(--accent);color:#fff;border-color:var(--accent)} button.primary:hover{background:#1d4ed8;color:#fff}
+  button.danger:hover{border-color:#dc2626;color:#dc2626}
+  .progress{flex:1;min-width:160px;height:10px;background:var(--line);border-radius:99px;overflow:hidden}.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));width:0%;transition:.3s}
+  main{padding:26px 0 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px;margin:18px 0;box-shadow:0 1px 4px rgba(15,23,42,.05)}
+  .card h2{margin:0 0 4px;font-size:21px}.card h3{margin:20px 0 6px;font-size:16px}.sub{color:var(--muted);margin:0 0 14px;font-size:14px}
+  .q{padding:14px 0;border-top:1px dashed var(--line)} .q:first-of-type{border-top:none}
+  .q label.title{display:block;font-weight:700;margin-bottom:4px}.q .help{color:var(--muted);font-size:13px;margin:0 0 8px}
+  .opts{display:flex;flex-wrap:wrap;gap:8px}.opt{position:relative}
+  .opt input{position:absolute;opacity:0;inset:0;cursor:pointer}
+  .opt span{display:block;padding:8px 13px;border:1.5px solid var(--line);border-radius:999px;font-size:14px;background:#fff;transition:.15s}
+  .opt input:checked+span{background:var(--soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+  .opt input:focus-visible+span{outline:2px solid var(--accent2);outline-offset:2px}
+  input[type=text],input[type=number],select,textarea{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;font-size:14px;background:#fff}
+  textarea{min-height:74px;resize:vertical} input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:680px){.grid{grid-template-columns:1fr}}
+  input[type=range]{width:100%} .rangeval{font-weight:800;color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:14px} th,td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:top} th{background:#f8fafc}
+  .callout{background:var(--soft);border-left:4px solid var(--accent);padding:12px 14px;border-radius:8px;font-size:14px;margin:12px 0}
+  .callout.warn{background:#fffbeb;border-color:var(--warn)} .callout.ok{background:#ecfdf5;border-color:var(--ok)}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}.kpi{background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:12px}.kpi b{display:block;font-size:20px}
+  #summary{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:18px;border-radius:12px;font-size:13.5px;max-height:520px;overflow:auto}
+  .saved{font-size:13px;color:var(--ok);font-weight:700} footer{color:var(--muted);font-size:13px;padding:24px 0 40px} a{color:var(--accent)}
+  .pill{display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
+  @media print{nav,header .badges{display:none} body{background:#fff} .card{box-shadow:none}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>🏢 Mon ERP — Choisir ma stack comme une grande entreprise</h1>
+  <p>Questionnaire complet de décision, adapté à un ERP. Répondez à votre rythme : <strong>tout est sauvegardé automatiquement dans votre navigateur</strong>. À la fin, exportez vos réponses et transmettez-les-moi pour que je construise exactement selon VOS choix.</p>
+  <div class="badges"><span class="badge">💾 Sauvegarde automatique</span><span class="badge">📤 Export JSON / Markdown</span><span class="badge">🧭 Recommandation automatique</span><span class="badge">🔒 Aucune donnée envoyée sur un serveur</span></div>
+</div></header>
+
+<nav><div class="wrap">
+  <div class="progress" title="Progression"><i id="bar"></i></div><span id="pct" class="saved">0 %</span><span id="saved" class="saved"></span>
+  <button class="primary" onclick="goSummary()">🧭 Voir ma synthèse</button>
+  <button onclick="exportJSON()">📤 Exporter JSON</button>
+  <button onclick="exportMD()">📝 Exporter Markdown</button>
+  <button onclick="document.getElementById('importFile').click()">📥 Importer</button>
+  <input type="file" id="importFile" accept=".json,application/json" hidden onchange="importJSON(event)">
+  <button class="danger" onclick="resetAll()">🗑️ Tout effacer</button>
+</div></nav>
+
+<main class="wrap">
+
+<div class="card">
+  <h2>📚 Comment les grandes entreprises choisissent leur stack (synthèse de la recherche)</h2>
+  <p class="sub">Ce questionnaire reprend leur méthode — pas les modes. Sources en bas de page.</p>
+  <div class="kpis">
+    <div class="kpi"><b>30 %</b>Adéquation au besoin métier (critère n°1 des matrices CTO)</div>
+    <div class="kpi"><b>25 %</b>Scalabilité à 3–5 ans (tenir ×10 sans tout réécrire)</div>
+    <div class="kpi"><b>25 %</b>Équipe &amp; recrutement (compétences dispo, marché de l'emploi)</div>
+    <div class="kpi"><b>20 %</b>TCO — coût total : licences + hébergement + maintenance + salaires</div>
+  </div>
+  <table>
+    <tr><th>Principe des grands groupes</th><th>Ce que ça veut dire pour votre ERP</th></tr>
+    <tr><td><strong>« Boring technology »</strong> : technos matures, communauté énorme, support long terme (LTS)</td><td>PostgreSQL (base n°1 mondiale, 58 % des devs en 2025), React/Node en tête des frameworks : recrutement facile, doc abondante.</td></tr>
+    <tr><td><strong>Commencer modulaire, pas microservices partout</strong></td><td>Les ERP historiques monolithiques (SAP…) migrent vers le modulaire/microservices <em>progressivement</em> (pattern « Strangler Fig »). Pour démarrer : un <strong>monolithe modulaire</strong> bien découpé par module métier = simple à déployer, découpable plus tard.</td></tr>
+    <tr><td><strong>TCO avant prix d'appel</strong></td><td>Le « gratuit » coûte cher si personne ne sait le maintenir. On compte hébergement + licences + temps dev + incidents sur 3 ans.</td></tr>
+    <tr><td><strong>Sécurité &amp; conformité dès le jour 1</strong> (20 % de la note chez les Fortune 500)</td><td>ERP = données sensibles (paie, finance) : rôles/permissions, journal d'audit, RGPD, sauvegardes ne sont pas des options.</td></tr>
+    <tr><td><strong>API-first &amp; intégrations</strong></td><td>Un ERP vit connecté : compta, banque, e-commerce, e-mail… L'architecture doit exposer des API propres dès le départ.</td></tr>
+    <tr><td><strong>Décision écrite et pondérée</strong> (ADR + matrice de décision)</td><td>C'est exactement ce que produit cet artefact : vos choix, datés, exportables, versionnables dans Git.</td></tr>
+  </table>
+  <div class="callout">👉 <strong>Comment me transmettre vos choix :</strong> 1) Répondez ici (sauvegarde auto). 2) Cliquez <strong>Exporter JSON</strong> → vous obtenez <code>mes-choix.json</code>. 3) Donnez-le-moi dans le chat (ou collez le résumé Markdown). Je l'enregistrerai dans le dépôt (<code>decisions/mes-choix.json</code>) et je lirai vos choix avant chaque développement.</div>
+</div>
+
+<form id="form"></form>
+
+<div class="card" id="summaryCard">
+  <h2>🧭 Votre synthèse &amp; recommandation</h2>
+  <p class="sub">Mise à jour en direct dès que vous répondez. La recommandation est une aide — le dernier mot vous revient (vos réponses explicites priment toujours).</p>
+  <div id="reco"></div>
+  <div id="summary">Répondez aux questions ci-dessus, votre résumé apparaîtra ici…</div>
+  <p style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+    <button class="primary" onclick="copySummary()">📋 Copier le résumé (à me coller dans le chat)</button>
+    <button onclick="exportJSON()">📤 Exporter mes-choix.json</button>
+    <button onclick="window.print()">🖨️ Imprimer / PDF</button>
+  </p>
+</div>
+
+<footer>
+  <p><strong>Sources (recherche du jour) :</strong>
+  <a href="https://beon.tech/blog/choosing-the-right-tech-stack-for-long-term-success/" target="_blank" rel="noopener">BEON — matrice de décision CTO (30/25/25/20)</a> ·
+  <a href="https://getnerdify.com/blog/how-to-choose-technology-stack" target="_blank" rel="noopener">Nerdify — piliers &amp; TCO</a> ·
+  <a href="https://www.cisin.com/coffee-break/choose-right-tech-stack-for-erp-software.html" target="_blank" rel="noopener">CISIN — framework ERP en 5 piliers</a> ·
+  <a href="https://survey.stackoverflow.co/2025/" target="_blank" rel="noopener">Stack Overflow Survey 2025 (PostgreSQL 58,2 %, Node 49 %, React 47 %)</a> ·
+  <a href="https://www.msg-advisors.com/en/insights/boosting-erp-capabilities-through-microservice-architecture/" target="_blank" rel="noopener">msg advisors — ERP &amp; microservices</a> ·
+  <a href="https://axis-intelligence.com/enterprise-best-tech-stacks-2025-slection/" target="_blank" rel="noopener">Axis — critères Fortune 500 (sécurité 20 %, intégration 18 %…)</a></p>
+  <p>Vos réponses restent dans votre navigateur (localStorage) tant que vous ne les exportez pas. Fichiers du projet : <code>index.html</code> (cet artefact) · <code>CHOIX-STACK-ERP.md</code> (version texte) · <code>decisions/mes-choix.json</code> (vos réponses, versionnées dans Git).</p>
+</footer>
+</main>
+
+<script>
+const KEY="my_erp_choix_v1";
+const MODULES=["Comptabilité / Finance","Facturation & devis","Stock / Inventaire","Achats / Fournisseurs","Ventes / Commandes","CRM (clients)","RH / Paie","Production / Atelier","Logistique / Livraison","Projets / Tâches","Point de vente (caisse)","E-commerce","Reporting / BI","Gestion documentaire (GED)"];
+const SECTIONS=[
+ {id:"contexte",icon:"🎯",title:"1. Votre entreprise & le but de l'ERP",sub:"Les grandes entreprises partent du besoin métier, jamais de la technologie.",qs:[
+  {id:"secteur",label:"Secteur d'activité",type:"text",ph:"Ex. négoce, fabrication, services, artisanat…"},
+  {id:"taille_entreprise",label:"Taille de l'entreprise",type:"radio",opts:["Solo / TPE (<10)","PME (10–50)","PME+ (50–250)","ETI / grand groupe (250+)"]},
+  {id:"probleme",label:"Problème principal que l'ERP doit résoudre",type:"textarea",ph:"Ex. je perds du temps entre Excel, la facturation et le stock…"},
+  {id:"remplace",label:"Que remplace cet ERP ?",type:"checkbox",opts:["Rien (on part de zéro)","Excel / fichiers","Un ERP existant","Plusieurs logiciels séparés","Logiciel maison"]},
+  {id:"horizon",label:"Horizon du projet",type:"radio",opts:["Prototype / MVP rapide","Outil interne durable","Produit que je veux vendre (SaaS)","Je ne sais pas encore"]},
+ ]},
+ {id:"utilisateurs",icon:"👥",title:"2. Utilisateurs & volume",sub:"La scalabilité se décide sur le volume réel à 3 ans, pas sur des fantasmes.",qs:[
+  {id:"nb_utilisateurs",label:"Utilisateurs simultanés au départ",type:"radio",opts:["1 (moi seul)","2–10","11–50","51–200","200+"]},
+  {id:"nb_utilisateurs_3ans",label:"Utilisateurs visés dans 3 ans",type:"radio",opts:["Pareils","×2","×5","×10 ou plus","Inconnu"]},
+  {id:"profils",label:"Qui utilisera l'ERP ?",type:"checkbox",opts:["Direction","Comptabilité","Commerciaux","Magasiniers / atelier","Tous les employés","Clients / partenaires (portail externe)"]},
+  {id:"acces",label:"Accès principal",type:"checkbox",opts:["Ordinateur (bureau)","Mobile","Tablette (atelier/magasin)","Hors-ligne parfois (terrain)"]},
+ ]},
+ {id:"modules",icon:"🧩",title:"3. Modules métier de l'ERP",sub:"Cochez ce qu'il vous faut. ⭐ = indispensable dès la v1.",qs:[
+  {id:"modules",label:"Modules souhaités",type:"checkbox",opts:MODULES},
+  {id:"modules_v1",label:"Modules indispensables dès la première version (v1)",type:"checkbox",opts:MODULES},
+  {id:"module_critique",label:"Le module le plus critique (celui qu'on ne doit jamais rater)",type:"text",ph:"Ex. la facturation"},
+  {id:"specificites",label:"Règles métier très spécifiques à votre secteur ?",type:"textarea",ph:"Ex. numéros de série, traçabilité par lot, TVA particulière, devis en plusieurs langues…"},
+ ]},
+ {id:"exigences",icon:"⚖️",title:"4. Exigences critiques (pondération façon Fortune 500)",sub:"Notez l'importance de 0 (peu importe) à 5 (vital). C'est votre matrice de décision.",qs:[
+  {id:"imp_securite",label:"Sécurité & conformité (RGPD, audit)",type:"range"},
+  {id:"imp_perf",label:"Performance / rapidité",type:"range"},
+  {id:"imp_scalabilite",label:"Scalabilité (croissance)",type:"range"},
+  {id:"imp_cout",label:"Coût faible (TCO)",type:"range"},
+  {id:"imp_simplicite",label:"Simplicité / facilité de maintenance",type:"range"},
+  {id:"imp_rapidite_dev",label:"Vitesse de développement (livrer vite)",type:"range"},
+  {id:"imp_design",label:"Design / expérience utilisateur",type:"range"},
+  {id:"imp_integrations",label:"Intégrations avec d'autres outils",type:"range"},
+ ]},
+ {id:"architecture",icon:"🏗️",title:"5. Architecture",sub:"Recommandation des experts ERP : monolithe modulaire au départ, microservices seulement si l'équipe et l'échelle le justifient.",qs:[
+  {id:"archi",label:"Architecture préférée",type:"radio",opts:["Monolithe modulaire (recommandé pour démarrer)","Microservices (grosse équipe, très gros volume)","Serverless","Je ne sais pas — décide pour moi selon mes réponses"]},
+  {id:"mode",label:"Mode d'exploitation",type:"radio",opts:["Cloud (accessible partout)","Sur nos serveurs (on-premise)","Hybride","Je ne sais pas"]},
+  {id:"multisociete",label:"Multi-sociétés / multi-dépôts / multi-devises ?",type:"checkbox",opts:["Multi-sociétés","Multi-dépôts","Multi-devises","Multi-langues","Aucun"]},
+ ]},
+ {id:"frontend",icon:"🎨",title:"6. Interface (frontend)",sub:"React et Node dominent le marché (recrutement facile). L'important : cohérence et rapidité d'usage au quotidien.",qs:[
+  {id:"frontend",label:"Technologie frontend",type:"radio",opts:["React + TypeScript (le plus répandu)","Vue.js + TypeScript","Angular (très entreprise)","Next.js (React + rendu serveur)","Aucune préférence — décide pour moi"]},
+  {id:"app_mobile",label:"Application mobile ?",type:"radio",opts:["Non, web responsive suffit","Oui, plus tard","Oui, dès la v1 (PWA)","Oui, apps natives iOS/Android"]},
+  {id:"design_lib",label:"Bibliothèque d'interface",type:"radio",opts:["Tailwind CSS (rapide, sur mesure)","Material UI","Ant Design (très ERP / tableaux)","Je ne sais pas"]},
+ ]},
+ {id:"backend",icon:"⚙️",title:"7. Backend (logique métier & API)",sub:"Pour un ERP : Java/Spring et C#/.NET dominent en entreprise, Node et Python montent fort. Le critère n°1 reste… votre équipe.",qs:[
+  {id:"backend",label:"Technologie backend",type:"radio",opts:["Node.js + TypeScript (même langage partout)","Python (Django / FastAPI)","Java (Spring Boot) — standard grand groupe","C# (.NET) — standard entreprise Microsoft","PHP (Laravel)","Aucune préférence — décide pour moi"]},
+  {id:"api",label:"Style d'API",type:"radio",opts:["REST (simple, universel)","GraphQL","Les deux","Je ne sais pas"]},
+ ]},
+ {id:"donnees",icon:"🗄️",title:"8. Données",sub:"PostgreSQL est la base n°1 mondiale depuis 3 ans (58 % en 2025) : robuste, gratuite, parfaite pour un ERP relationnel.",qs:[
+  {id:"bdd",label:"Base de données principale",type:"radio",opts:["PostgreSQL (recommandée)","MySQL / MariaDB","Microsoft SQL Server","MongoDB (documents)","SQLite (très petit projet)","Je ne sais pas — décide pour moi"]},
+  {id:"donnees_sensibles",label:"Données particulièrement sensibles ?",type:"checkbox",opts:["Paie / salaires","Données bancaires","Données de santé","Données clients personnelles (RGPD)","Secrets industriels","Non"]},
+  {id:"volume_donnees",label:"Volume de données estimé",type:"radio",opts:["Petit (< 10 000 lignes / module)","Moyen (10k–500k)","Gros (500k–plusieurs millions)","Très gros / temps réel"]},
+  {id:"sauvegarde",label:"Sauvegardes & reprise après panne",type:"radio",opts:["Basique (quotidienne)","Renforcée (plusieurs fois / jour)","Critique (perte de données quasi impossible)","Je ne sais pas"]},
+ ]},
+ {id:"securite",icon:"🔐",title:"9. Sécurité, rôles & conformité",sub:"Dans un ERP, tout le monde ne doit pas tout voir (la paie ≠ le stock).",qs:[
+  {id:"auth",label:"Connexion des utilisateurs",type:"checkbox",opts:["E-mail + mot de passe","Double facteur (2FA)","Google / Microsoft (SSO)","LDAP / Active Directory de l'entreprise","Code par e-mail / lien magique"]},
+  {id:"roles",label:"Gestion des rôles et permissions ?",type:"radio",opts:["Oui, fine (par module et par action)","Simple (admin / utilisateur)","Non, tout le monde voit tout"]},
+  {id:"audit",label:"Journal d'audit (qui a fait quoi, quand) ?",type:"radio",opts:["Oui, indispensable (conformité)","Oui, si c'est simple","Non"]},
+  {id:"conformite",label:"Conformités particulières",type:"checkbox",opts:["RGPD","Facturation électronique (obligatoire en France 2026-2027)","Norme comptable / export expert-comptable","ISO / secteur réglementé","Aucune"]},
+ ]},
+ {id:"integrations",icon:"🔌",title:"10. Intégrations",sub:"Un ERP isolé meurt vite : listez tout ce à quoi il doit parler.",qs:[
+  {id:"integrations",label:"Outils à connecter",type:"checkbox",opts:["E-mail (envoi de factures…)","Banque / paiements (Stripe…)","E-commerce (Shopify, WooCommerce…)","Comptabilité externe / expert-comptable","Google Drive / OneDrive","Signature électronique","SMS / notifications","Excel (import/export)","Autre (préciser ci-dessous)"]},
+  {id:"integrations_detail",label:"Précisez vos intégrations",type:"textarea",ph:"Ex. import des commandes Shopify, export FEC pour l'expert-comptable…"},
+  {id:"import_initial",label:"Données à reprendre au démarrage",type:"radio",opts:["Aucune","Fichiers Excel / CSV","Depuis un autre logiciel","Je ne sais pas"]},
+ ]},
+ {id:"hebergement",icon:"☁️",title:"11. Hébergement, DevOps & maintenance",sub:"AWS mène le marché, Azure domine chez les clients Microsoft, GCP monte. L'essentiel : conteneurs (Docker) et déploiement automatisé.",qs:[
+  {id:"cloud",label:"Hébergeur envisagé",type:"radio",opts:["AWS","Microsoft Azure","Google Cloud","Hébergeur européen simple (OVH, Hetzner…)","Serveur interne","Je ne sais pas — conseille-moi"]},
+  {id:"devops",label:"Niveau DevOps souhaité",type:"radio",opts:["Simple (Docker, déploiement en 1 commande)","Standard (+ CI/CD automatique, tests auto)","Avancé (Kubernetes, multi-environnements)","Je ne sais pas"]},
+  {id:"environnements",label:"Environnements",type:"checkbox",opts:["Production uniquement","Test / staging + production","Développement + test + production"]},
+  {id:"maintenance",label:"Qui maintiendra l'ERP ?",type:"radio",opts:["Moi-même","Moi + l'assistant IA","Une équipe interne","Un prestataire","À décider"]},
+ ]},
+ {id:"equipe_budget",icon:"👨‍💻",title:"12. Équipe, budget & délais",sub:"Les grandes entreprises arbitrent stack ↔ compétences disponibles. Une techno parfaite sans personne pour la coder est un mauvais choix.",qs:[
+  {id:"competences",label:"Langages / technos que vous (ou votre équipe) maîtrisez déjà",type:"checkbox",opts:["JavaScript / TypeScript","Python","Java","C#","PHP","SQL","Aucun — je pars de zéro","Je délègue tout"]},
+  {id:"equipe_dev",label:"Taille de l'équipe de développement",type:"radio",opts:["Moi seul (+ IA)","2–3 personnes","4–10 personnes","Équipe externe"]},
+  {id:"budget",label:"Budget de développement envisagé",type:"radio",opts:["Minimal (le moins cher possible)","Modéré","Confortable","Je ne sais pas"]},
+  {id:"delai",label:"Délai pour une première version utilisable",type:"radio",opts:["Quelques semaines","2–3 mois","6 mois","Pas de contrainte forte"]},
+  {id:"langue_doc",label:"Langue de l'interface et de la documentation",type:"radio",opts:["Français","Anglais","Français + Anglais"]},
+ ]},
+ {id:"arbitrages",icon:"🧭",title:"13. Vos arbitrages (le mot de la fin)",sub:"En cas de conflit entre deux bonnes options, qu'est-ce qui tranche chez vous ?",qs:[
+  {id:"priorite_absolue",label:"Si vous ne deviez en garder qu'UNE priorité",type:"radio",opts:["Livrer vite","Que ça tienne 10 ans","Que ça coûte le moins cher","Que ce soit beau et agréable","Que ce soit ultra-sécurisé"]},
+  {id:"a_eviter",label:"Technologies ou choses à éviter absolument",type:"textarea",ph:"Ex. pas de Microsoft, pas d'abonnement coûteux, pas de…"},
+  {id:"a_garder",label:"Choix déjà arrêtés / imposés (à respecter impérativement)",type:"textarea",ph:"Ex. hébergement chez OVH imposé, base SQL Server existante…"},
+  {id:"notes_libres",label:"Tout ce que vous voulez me dire d'autre",type:"textarea",ph:"Contexte, craintes, envies, exemples d'ERP que vous aimez…"},
+  {id:"validation",label:"Validation du processus",type:"radio",opts:["Je veux valider chaque grande étape avant que tu codes","Avance en autonomie et montre-moi le résultat","Un mélange : autonome sur le détail, validation sur les gros choix"]},
+ ]},
+];
+
+let state=load();
+function load(){try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}}
+function save(){localStorage.setItem(KEY,JSON.stringify(state));document.getElementById('saved').textContent="💾 Sauvegardé à "+new Date().toLocaleTimeString('fr-FR');render();}
+function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+
+function field(q){
+  const v=state[q.id];
+  if(q.type==="radio"||q.type==="checkbox"){
+    const name=q.type==="radio"?q.id:q.id+"[]";
+    return `<div class="opts">${q.opts.map(o=>{
+      const checked=q.type==="radio"?v===o:Array.isArray(v)&&v.includes(o);
+      return `<label class="opt"><input type="${q.type}" name="${name}" value="${esc(o)}" ${checked?"checked":""} onchange="onChange('${q.id}','${q.type}',this)"><span>${esc(o)}</span></label>`}).join("")}</div>`;
+  }
+  if(q.type==="range"){
+    const val=v??3;
+    return `<input type="range" min="0" max="5" step="1" value="${val}" oninput="onRange('${q.id}',this)"><span class="rangeval" id="rv_${q.id}">${val} / 5</span>`;
+  }
+  if(q.type==="textarea")return `<textarea placeholder="${esc(q.ph||"")}" oninput="onText('${q.id}',this.value)">${esc(v||"")}</textarea>`;
+  return `<input type="text" placeholder="${esc(q.ph||"")}" value="${esc(v||"")}" oninput="onText('${q.id}',this.value)">`;
+}
+function build(){
+  document.getElementById('form').innerHTML=SECTIONS.map(s=>`
+   <section class="card" id="sec_${s.id}"><h2>${s.icon} ${s.title}</h2><p class="sub">${s.sub}</p>
+   ${s.qs.map(q=>`<div class="q"><label class="title" for="">${q.label}</label>${q.help?`<p class="help">${q.help}</p>`:""}${field(q)}</div>`).join("")}
+   </section>`).join("");
+  render();
+}
+window.onChange=(id,type,el)=>{
+  if(type==="radio")state[id]=el.value;
+  else{state[id]=Array.from(document.querySelectorAll(`input[name="${id}[]"]:checked`)).map(i=>i.value)}
+  save();
+};
+window.onText=(id,val)=>{state[id]=val;saveSoft()};
+window.onRange=(id,el)=>{state[id]=Number(el.value);document.getElementById('rv_'+id).textContent=el.value+" / 5";saveSoft()};
+let t;function saveSoft(){clearTimeout(t);t=setTimeout(save,400);document.getElementById('saved').textContent="✍️ Saisie…"}
+
+function answeredCount(){
+  let total=0,done=0;
+  SECTIONS.forEach(s=>s.qs.forEach(q=>{total++;const v=state[q.id];
+    if(q.type==="range"|| (v!==undefined&&v!==""&&!(Array.isArray(v)&&!v.length)))done++;}));
+  return{total,done};
+}
+function recoText(){
+  const r=[];const pick=(id,def)=>state[id]&&!String(state[id]).includes("décide pour moi")&&!String(state[id]).includes("Je ne sais pas")?state[id]:null;
+  const small=["1 (moi seul)","2–10"].includes(state.nb_utilisateurs), solo=state.equipe_dev==="Moi seul (+ IA)";
+  const archi=pick("archi",null);
+  r.push(`**Architecture conseillée :** ${archi||((small||solo)?"Monolithe modulaire — simple à déployer, découpable en microservices plus tard (migration progressive type « Strangler Fig »).":"Microservices ou monolithe modulaire renforcé — votre volume/équipe peut l'absorber.")}`);
+  r.push(`**Frontend :** ${pick("frontend")||"React + TypeScript (marché n°1 : recrutement et composants ERP abondants)"} ${state.app_mobile==="Oui, dès la v1 (PWA)"?"— en PWA installable dès la v1.":state.app_mobile==="Oui, apps natives iOS/Android"?"— + apps natives à prévoir (budget dédié).":"— web responsive, pas d'app native."}`);
+  r.push(`**Backend :** ${pick("backend")||(state.competences?.includes("Python")?"Python (FastAPI/Django) — cohérent avec vos compétences.":state.competences?.includes("JavaScript / TypeScript")?"Node.js + TypeScript — un seul langage front + back.":"Node.js + TypeScript par défaut (écosystème n°1), sauf contrainte d'équipe.")}`);
+  r.push(`**Base de données :** ${pick("bdd")||"PostgreSQL — n°1 mondial, gratuit, idéal pour les données relationnelles d'un ERP."}`);
+  r.push(`**Hébergement :** ${pick("cloud")||"Hébergeur européen simple ou cloud majeur selon le budget — conteneurisé Docker dès le départ pour rester libre de changer."}`);
+  if((state.imp_securite??0)>=4)r.push(`⚠️ **Sécurité prioritaire (${state.imp_securite}/5)** : 2FA, rôles fins, journal d'audit et sauvegardes renforcées à intégrer dès la v1.`);
+  if(state.modules_v1?.length)r.push(`**Périmètre v1 :** ${state.modules_v1.join(", ")}.`);
+  if(state.a_garder)r.push(`**Contrainte imposée respectée :** ${state.a_garder}`);
+  return r;
+}
+function summaryMD(){
+  const lines=[`# Mes choix — Stack de mon ERP`,`_Exporté le ${new Date().toLocaleString('fr-FR')} depuis l'artefact de décision._`,""];
+  SECTIONS.forEach(s=>{lines.push(`## ${s.title}`);s.qs.forEach(q=>{const v=state[q.id];
+    const txt=Array.isArray(v)?(v.join(", ")||"—"):q.type==="range"?`${v??3} / 5`:(v||"—");
+    lines.push(`- **${q.label} :** ${txt}`)});lines.push("")});
+  lines.push("## 🧭 Recommandation automatique (à valider)");recoText().forEach(r=>lines.push("- "+r.replace(/\*\*/g,"**")));
+  return lines.join("\n");
+}
+function render(){
+  const{total,done}=answeredCount();const p=Math.round(done/total*100);
+  document.getElementById('bar').style.width=p+"%";document.getElementById('pct').textContent=p+" % complété";
+  document.getElementById('reco').innerHTML=recoText().map(r=>`<div class="callout">${r.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}</div>`).join("");
+  document.getElementById('summary').textContent=summaryMD();
+}
+function download(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+window.exportJSON=()=>download("mes-choix.json",JSON.stringify({projet:"my_ERP",exporte_le:new Date().toISOString(),reponses:state,recommandation:recoText().map(r=>r.replace(/\*\*/g,""))},null,2),"application/json");
+window.exportMD=()=>download("mes-choix.md",summaryMD(),"text/markdown");
+window.copySummary=async()=>{try{await navigator.clipboard.writeText(summaryMD());alert("✅ Résumé copié ! Collez-le dans le chat pour que je l'enregistre et que j'en tienne compte.")}catch(e){alert("Copie impossible : sélectionnez le texte du résumé manuellement.")}};
+window.importJSON=(ev)=>{const f=ev.target.files[0];if(!f)return;f.text().then(txt=>{try{const d=JSON.parse(txt);state=d.reponses||d;save();build();alert("✅ Réponses importées !")}catch(e){alert("❌ Fichier JSON illisible.")}})};
+window.resetAll=()=>{if(confirm("Effacer toutes vos réponses ?")){state={};localStorage.removeItem(KEY);build();}};
+window.goSummary=()=>document.getElementById('summaryCard').scrollIntoView({behavior:"smooth"});
+build();
+</script>
+</body>
+</html>
