@@ -27,12 +27,10 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
-      - name: Installer Rust
-        uses: dtolnay/rust-toolchain@stable
       - name: Compiler
         run: |
           set +e
-          cargo build > /tmp/build.log 2>&1
+          (rustc --version; cargo --version; cargo build) > /tmp/build.log 2>&1
           code=$?
           { echo '## cargo build'; echo '```'; tail -60 /tmp/build.log; echo '```'; } > /tmp/diag-build.md
           tail -20 /tmp/build.log
@@ -66,9 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Installer Rust + clippy
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - name: Installer clippy (composant rustup)
+        run: rustup component add clippy || true
       - name: Clippy (informatif)
         run: cargo clippy -- -D warnings || true
