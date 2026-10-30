@@ -78,10 +78,17 @@ Vos deux activités que l'ERP doit couvrir (déduites de votre demande « règle
 - **Préparation** (architecture, pas d'écran) : API REST du socle pour la future application mobile ; multi-langue **non** (français uniquement).
 
 ### 4.2 Hors périmètre v1 (Won't — pour tenir « quelques semaines »)
-GUI / interface web ❌ (votre contrainte absolue) · application mobile (plus tard) · paie/RH · production/atelier ·
-multi-dépôts avancé · signature électronique intégrée (Could v1.x) · connecteur Vinted « automatique » par scraping
-(interdit par les CGU des plateformes — uniquement API officielle si elle existe ou import CSV, §11.3) ·
-devenir soi-même plateforme agréée de facturation électronique ❌ (on se connecte à une plateforme agréée existante).
+
+Sont explicitement **exclus de la v1** :
+
+- ❌ **GUI / interface web** (votre contrainte absolue)
+- 📱 Application mobile (plus tard)
+- 👥 Paie / RH
+- 🏭 Production / atelier
+- 🏬 Multi-dépôts avancé
+- ✍️ Signature électronique intégrée (Could v1.x)
+- 🤖 Connecteur Vinted « automatique » par scraping (interdit par les CGU des plateformes — uniquement API officielle si elle existe, ou import CSV, §11.3)
+- ❌ Devenir soi-même plateforme agréée de facturation électronique (on se connecte à une plateforme agréée existante)
 
 ### 4.3 Versions suivantes (vision)
 v1.x : signature électronique, SMS de relance, rapprochement Stripe automatique. v2 : application mobile (via API REST), module Projets/Tâches complet (souhaité mais hors v1), Ventes/Commandes avancé.
