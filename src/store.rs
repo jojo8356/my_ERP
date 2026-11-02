@@ -519,6 +519,21 @@ impl Store {
         self.societe_courante
     }
 
+    /// Régime de TVA de la société courante, en lecture seule.
+    ///
+    /// Le CLI doit calculer des totaux TTC pour *afficher* (listes, JSON, CSV) :
+    /// il ne peut pas payer un `&mut self` (création implicite de la société)
+    /// à chaque ligne affichée. La valeur par défaut est la franchise en base,
+    /// c'est-à-dire le régime d'une micro-entreprise qui démarre.
+    pub fn societe_regime_public(&self) -> RegimeTva {
+        self.societes
+            .iter()
+            .find(|s| s.id == self.societe_courante)
+            .or_else(|| self.societes.first())
+            .map(|s| s.regime)
+            .unwrap_or(RegimeTva::Franchise)
+    }
+
     /// Société courante (créée à la première utilisation — mono-utilisateur v1).
     pub fn societe(&mut self) -> Resultat<Societe> {
         if self.societes.is_empty() {
