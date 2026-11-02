@@ -54,6 +54,7 @@ fn main() -> ExitCode {
     // Options de démarrage (le reste part au CLI).
     let mut memoire = false;
     let mut dossier: Option<PathBuf> = None;
+    let mut base: Option<String> = None;
     let mut commande: Vec<String> = Vec::new();
     let mut i = 0;
     while i < args.len() {
@@ -63,15 +64,48 @@ fn main() -> ExitCode {
                 dossier = Some(PathBuf::from(&args[i + 1]));
                 i += 1;
             }
-            a if a.starts_with("--donnees=") => {
-                dossier = Some(PathBuf::from(&a["--donnees=".len()..]));
+            "--bdd" | "--base" | "--database-url" if i + 1 < args.len() => {
+                base = Some(args[i + 1].clone());
+                i += 1;
             }
+            a if a.starts_with("--bdd=") => base = Some(a["--bdd=".len()..].to_string()),
+            a if a.starts_with("--base=") => base = Some(a["--base=".len()..].to_string()),
             autre => commande.push(autre.to_string()),
         }
         i += 1;
     }
 
-    let mut app = if memoire {
+    // La base peut aussi venir de l'environnement (ERP_DATABASE_URL) : c'est ce
+    // que fait le script de recette et la CI.
+    if base.is_none() {
+        base = std::env::var("ERP_DATABASE_URL").ok().filter(|u| !u.trim().is_empty());
+    }
+
+    let mut app = if let Some(url) = base {
+        #[cfg(feature = "postgres")]
+        {
+            match App::ouvrir_bdd(&url) {
+                Ok(app) => app,
+                Err(e) => {
+                    eprintln!("{}", theme::erreur(format!("✗ {e}")));
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+        #[cfg(not(feature = "postgres"))]
+        {
+            let _ = url;
+            eprintln!(
+                "{}",
+                theme::erreur(
+                    "✗ ce binaire est compilé sans la base de données PostgreSQL.\n  \
+                     Reconstruisez avec : cargo build --features postgres\n  \
+                     (sans base : laissez tomber --bdd et utilisez le dossier local)"
+                )
+            );
+            return ExitCode::FAILURE;
+        }
+    } else if memoire {
         eprintln!(
             "{}",
             theme::info("(mode mémoire : données perdues à la fermeture — démonstration)")

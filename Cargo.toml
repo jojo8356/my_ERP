@@ -15,14 +15,14 @@ chromat = { git = "https://github.com/jojo8356/chromat", tag = "v0.1.1" }
 ratatui = "0.29"
 crossterm = "0.28"
 rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0" }
-# Feature « postgres » volontairement absente : voir ADR-006 (aucune base en v1).
-# rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0", features = ["postgres"] }
 
 [features]
-# Le client Rustorm généré contient `#[cfg(feature = "postgres")]` pour son pool.
-# La feature est déclarée ici (sans dépendance associée) pour que `rustc` sache
-# qu'elle existe, mais **elle n'est jamais activée** : aucune base en v1 (ADR-006).
-postgres = []
+# Par défaut : aucune base de données (stockage fichier piloté par le schéma).
+# `cargo build --features postgres` active le connecteur PostgreSQL de Rustorm
+# et le backend `src/bdd.rs` (ADR-006 et ADR-009) : la même application, les
+# mêmes commandes, mais l'état est lu/écrit dans PostgreSQL via l'ORM.
+# Le connecteur `postgres` de Rustorm passe par libpq (paquet `libpq-dev`).
+postgres = ["rustorm/postgres"]
 
 [build-dependencies]
 rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0" }

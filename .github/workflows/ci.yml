@@ -5,64 +5,87 @@ on:
   pull_request:
 
 jobs:
-  build-test:
+  # Recette complète sans base de données : c'est le mode par défaut de l'ERP
+  # (fichiers locaux pilotés par le schéma Rustorm).
+  recette:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compiler (Chromat + Rustorm Git, Ratatui/Crossterm crates.io, ADR-004/005/006)
+      - name: Recette complète (test-all.sh, sans base)
         run: |
           set +e
-          cargo build > /tmp/build.log 2>&1; code=$?
-          tail -5 /tmp/build.log; exit $code
-      - name: Tests unitaires et métier
-        run: |
-          set +e
-          cargo test > /tmp/tests.log 2>&1; code=$?
-          tail -5 /tmp/tests.log; exit $code
-      - name: Scénario complet (persistance fichier, process séparés)
-        run: |
-          set +e
-          export ERP_DONNEES_DIR=/tmp/erp-demo
-          bash scripts/scenario-demo.sh > /tmp/scenario.log 2>&1; code=$?
-          tail -30 /tmp/scenario.log
-          if [ $code -ne 0 ]; then
-            # Le journal complet n'est pas lisible hors GitHub : la fin du
-            # scénario (commande fautive + message français) part en annotation.
-            python3 -c "import sys; d=open('/tmp/scenario.log',encoding='utf-8',errors='replace').read()[-4000:]; print('::error::'+d.replace('%','%25').replace('\n','%0A'))"
-          fi
-          exit $code
-      - name: Diagnostic (digest des erreurs dans une annotation unique)
+          bash test-all.sh --rapide > /tmp/test-all.log 2>&1; code=$?
+          tail -60 /tmp/test-all.log; exit $code
+      - name: Diagnostic (erreurs et échecs de test dans l'onglet Annotations)
         if: failure()
         run: |
           python3 - <<'PY'
           import os, re
-
-          def interessant(ligne):
-              return (
-                  ligne.startswith("error")
-                  or ligne.startswith("---- ")
-                  or " panicked at " in ligne
-                  or ligne.lstrip().startswith(("left:", "right:"))
-                  or "assertion" in ligne
-                  or ligne.startswith("✅")
-                  or "introuvable" in ligne
-                  or "invalide" in ligne
-              )
-
-          morceaux = []
-          for chemin in ("/tmp/tests.log", "/tmp/build.log"):
-              if not os.path.exists(chemin):
-                  continue
+          chemin = "/tmp/test-all.log"
+          if os.path.exists(chemin):
               lignes = open(chemin, encoding="utf-8", errors="replace").read().splitlines()
-              bloc = []
+              print(f"::group::{chemin} ({len(lignes)} lignes)")
               for i, ligne in enumerate(lignes):
-                  if interessant(ligne):
-                      bloc.extend(l for l in lignes[i:i + 6] if l.strip())
-              if bloc:
-                  morceaux.append(f"=== {chemin} ===")
-                  morceaux.extend(bloc[:40])
-              morceaux.append(f"=== {chemin} (fin) ===")
-              morceaux.extend(lignes[-20:])
-          digest = "\n".join(morceaux)[:7000] or "aucune ligne d'erreur reconnue"
-          print("::error::" + digest.replace("%", "%25").replace("\n", "%0A"))
+                  interessant = (
+                      ligne.startswith("error")
+                      or ligne.startswith("---- ")
+                      or " panicked at " in ligne
+                      or ligne.lstrip().startswith(("left:", "right:"))
+                      or "assertion" in ligne
+                      or ligne.lstrip().startswith("✗")
+                  )
+                  if interessant:
+                      for extra in [ligne] + lignes[i + 1:i + 4]:
+                          if extra.strip():
+                              print("::error::" + extra.replace("%", "%25"))
+              print("::endgroup::")
+          PY
+
+  # Le même ERP, mais l'état vit dans PostgreSQL : Rustorm crée le schéma
+  # (migration), puis lit et écrit toutes les tables dans une transaction.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: erp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erp -d erp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      ERP_DATABASE_URL: postgres://erp:erp@127.0.0.1:5432/erp
+    steps:
+      - uses: actions/checkout@v4
+      - name: libpq (connecteur PostgreSQL de Rustorm)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libpq-dev
+      - name: Recette complète avec base (feature postgres)
+        run: |
+          set +e
+          bash test-all.sh --features postgres --bdd "$ERP_DATABASE_URL" > /tmp/test-all-pg.log 2>&1; code=$?
+          tail -80 /tmp/test-all-pg.log; exit $code
+      - name: Diagnostic PostgreSQL
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import os
+          chemin = "/tmp/test-all-pg.log"
+          if os.path.exists(chemin):
+              lignes = open(chemin, encoding="utf-8", errors="replace").read().splitlines()
+              print("::group::journal PostgreSQL")
+              for i, ligne in enumerate(lignes):
+                  if (ligne.startswith("error")
+                          or " panicked at " in ligne
+                          or ligne.lstrip().startswith("✗")
+                          or "PostgreSQL" in ligne):
+                      for extra in [ligne] + lignes[i + 1:i + 4]:
+                          if extra.strip():
+                              print("::error::" + extra.replace("%", "%25"))
+              print("::endgroup::")
           PY

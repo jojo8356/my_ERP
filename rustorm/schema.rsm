@@ -253,6 +253,16 @@ model Sauvegarde {
   @@map("sauvegardes")
 }
 
+// Métadonnées du magasin (société courante, session, compteur d'identifiants).
+// En mode fichier elles vivent dans `meta.tsv` ; en mode base elles ont leur
+// table, pour qu'une session de travail se reprenne à l'identique.
+model Meta {
+  id BigInt @id @default(autoincrement())
+  cle String @unique
+  valeur String @default("")
+  @@map("meta")
+}
+
 model Recurrence {
   id BigInt @id @default(autoincrement())
   societe_id BigInt

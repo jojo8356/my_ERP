@@ -48,6 +48,7 @@ pub fn tables() -> Vec<(&'static str, &'static [&'static str])> {
         ("sequences", generated::sequence::columns()),
         ("sauvegardes", generated::sauvegarde::columns()),
         ("recurrences", generated::recurrence::columns()),
+        ("meta", generated::meta::columns()),
     ]
 }
 
@@ -125,6 +126,7 @@ mod tests {
             "taux_change",
             "audit_log",
             "sequences",
+            "meta",
         ] {
             assert!(
                 schema.models.iter().any(|m| m.table == attendu),

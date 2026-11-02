@@ -55,6 +55,22 @@ pub struct LigneTable {
 }
 
 impl LigneTable {
+    /// Construit une ligne depuis les valeurs brutes d'une autre source
+    /// (PostgreSQL via `bdd::Bdd::charger`), dans l'ordre des colonnes du modèle.
+    /// Les décodeurs sont ainsi **partagés** entre fichier et base.
+    pub fn depuis_valeurs(table: &str, valeurs: Vec<String>) -> Resultat<Self> {
+        let colonnes =
+            orm::colonnes(table).ok_or_else(|| format!("table absente du schéma : {table}"))?;
+        if valeurs.len() != colonnes.len() {
+            return Err(format!(
+                "table {table} : {} valeurs pour {} colonnes",
+                valeurs.len(),
+                colonnes.len()
+            ));
+        }
+        Ok(Self { colonnes, valeurs })
+    }
+
     pub fn texte(&self, colonne: &str) -> String {
         self.colonnes
             .iter()

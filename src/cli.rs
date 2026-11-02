@@ -309,6 +309,7 @@ fn aide_contexte(chemin: &[String]) -> &'static str {
         Some("admin") => "\
 /admin sante                 fichiers, lignes, sauvegarde, chaîne d'audit
 /admin schema                modèle Rustorm (--sql pour la migration PostgreSQL)
+/admin bdd                   support de stockage et état de la base (feature postgres)
 /admin audit [--verifier]    journal d'audit infalsifiable
 /admin sauvegarde            crée une sauvegarde datée
 /admin sauvegardes           liste   |   /admin restaurer <nom>
@@ -330,6 +331,16 @@ impl App {
         Self {
             store: Store::memoire(),
         }
+    }
+
+    /// Ouvre l'ERP sur une base PostgreSQL (binaire compilé avec
+    /// `--features postgres`). Les commandes sont **identiques** : seul le
+    /// support de persistance change (ADR-009).
+    #[cfg(feature = "postgres")]
+    pub fn ouvrir_bdd(url: &str) -> Resultat<Self> {
+        Ok(Self {
+            store: Store::ouvrir_bdd(url)?,
+        })
     }
 
     pub fn executer(&mut self, commande_brute: &str, sortie: &mut dyn Write) -> Resultat<bool> {
@@ -2814,6 +2825,7 @@ Créez un administrateur : /utilisateurs nouveau jojo --role admin --mot-de-pass
                         crate::orm::EMPREINTE_SCHEMA
                     ),
                 )?;
+                ecrire(sortie, format!("  stockage : {}", self.store.support()))?;
                 match self.store.dossier() {
                     Some(dossier) => {
                         let mut octets = 0u64;
@@ -2858,6 +2870,7 @@ Créez un administrateur : /utilisateurs nouveau jojo --role admin --mot-de-pass
                 }
                 Ok(())
             }
+            Some("bdd") | Some("base") => self.cmd_bdd(&rest[1..], sortie),
             Some("schema") => {
                 if drapeau(options, "sql") || rest.iter().any(|s| s.eq_ignore_ascii_case("sql")) {
                     return ecrire(sortie, crate::orm::ddl_postgres()?);
@@ -2935,6 +2948,56 @@ Créez un administrateur : /utilisateurs nouveau jojo --role admin --mot-de-pass
             Some("mentions") => self.mentions(sortie),
             _ => Err("usage : /admin sante | schema [sql] | audit [verifier] | sauvegarde | sauvegardes | restaurer <nom> | mentions".into()),
         }
+    }
+
+    /// `/admin bdd` : quel support porte les données, et — si la feature
+    /// `postgres` est compilée — l'état réel de la base (tables, lignes).
+    fn cmd_bdd(&mut self, rest: &[&str], sortie: &mut dyn Write) -> Resultat<()> {
+        ecrire(sortie, theme::titre("Support de stockage"))?;
+        ecrire(sortie, format!("  {}", self.store.support()))?;
+        ecrire(
+            sortie,
+            format!(
+                "  schéma Rustorm {} · {} table(s)",
+                crate::orm::EMPREINTE_SCHEMA,
+                crate::orm::tables().len()
+            ),
+        )?;
+
+        #[cfg(feature = "postgres")]
+        {
+            if let Some(compteurs) = self.store.compteurs_bdd()? {
+                ecrire(sortie, "  base : PostgreSQL (via Rustorm)")?;
+                for (table, lignes) in compteurs {
+                    ecrire(sortie, format!("    {table:<22} {lignes:>6} ligne(s)"))?;
+                }
+            } else {
+                ecrire(
+                    sortie,
+                    theme::info(
+                        "  pas de base connectée — lancez `--bdd postgres://…` \
+                         ou définissez ERP_DATABASE_URL",
+                    ),
+                )?;
+            }
+            if rest.iter().any(|s| s.eq_ignore_ascii_case("vider")) {
+                self.store.vider_bdd()?;
+                ecrire(sortie, theme::succes("✓ Tables vidées (base conservée)"))?;
+            }
+        }
+        #[cfg(not(feature = "postgres"))]
+        {
+            let _ = rest;
+            ecrire(
+                sortie,
+                theme::info(
+                    "  binaire compilé sans la feature `postgres` : \
+                     reconstruisez avec `cargo build --features postgres` \
+                     pour activer PostgreSQL (ADR-009)",
+                ),
+            )?;
+        }
+        Ok(())
     }
 
     fn mentions(&mut self, sortie: &mut dyn Write) -> Resultat<()> {

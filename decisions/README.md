@@ -21,5 +21,6 @@
 | [ADR-006](ADR-006-rustorm-sans-base.md) | Rustorm comme modèle unique, **sans base de données** | acté |
 | [ADR-007](ADR-007-securite-locale.md) | Sécurité locale : rôles, PBKDF2, TOTP, audit chaîné | acté |
 | [ADR-008](ADR-008-documents-pdf-email-efacture.md) | PDF, e-mail, CSV et e-facture écrits dans le dépôt | acté |
+| [ADR-009](ADR-009-postgresql-via-rustorm.md) | PostgreSQL **par Rustorm**, en option (`--features postgres`) | acté |
 
 Traçabilité exigence par exigence du CDC v1.1 : [`../CONFORMITE-CDC.md`](../CONFORMITE-CDC.md).

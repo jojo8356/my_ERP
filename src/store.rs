@@ -246,7 +246,11 @@ pub struct StatsVinted {
 // ------------------------------------------------------------ Le magasin
 
 pub struct Store {
+    /// Mode fichier : dossier des tables TSV.
     disque: Option<PathBuf>,
+    /// Mode base : connexion PostgreSQL pilotée par Rustorm (feature `postgres`).
+    #[cfg(feature = "postgres")]
+    bdd: Option<crate::bdd::Bdd>,
     societe_courante: i64,
     session: String,
     prochain_id: i64,
@@ -279,6 +283,8 @@ impl Store {
     pub fn memoire() -> Self {
         Self {
             disque: None,
+            #[cfg(feature = "postgres")]
+            bdd: None,
             societe_courante: 0,
             session: "local".to_string(),
             prochain_id: 1,
@@ -318,19 +324,144 @@ impl Store {
     }
 
     pub fn persistant(&self) -> bool {
-        self.disque.is_some()
+        if self.disque.is_some() {
+            return true;
+        }
+        #[cfg(feature = "postgres")]
+        if self.bdd.is_some() {
+            return true;
+        }
+        false
+    }
+
+    /// Vrai quand l'état vit dans PostgreSQL (mode base).
+    pub fn en_base(&self) -> bool {
+        #[cfg(feature = "postgres")]
+        {
+            self.bdd.is_some()
+        }
+        #[cfg(not(feature = "postgres"))]
+        {
+            false
+        }
+    }
+
+    /// Description du stockage, pour `/admin sante`.
+    pub fn support(&self) -> String {
+        #[cfg(feature = "postgres")]
+        if let Some(bdd) = &self.bdd {
+            return format!("PostgreSQL via Rustorm ({})", bdd.description());
+        }
+        match &self.disque {
+            Some(dossier) => format!("fichiers locaux ({})", dossier.display()),
+            None => "mémoire (rien n'est conservé)".to_string(),
+        }
+    }
+
+    /// Ouvre l'ERP sur une base PostgreSQL (feature `postgres`).
+    ///
+    /// La migration issue du schéma `.rsm` est appliquée si la base est vide :
+    /// les tables sont donc créées par l'ORM, jamais à la main. L'état est
+    /// ensuite chargé en mémoire ; chaque écriture est rejouée dans une
+    /// transaction (`Store::persister`).
+    #[cfg(feature = "postgres")]
+    pub fn ouvrir_bdd(url: &str) -> Resultat<Self> {
+        let mut bdd = crate::bdd::Bdd::connecter(url)?;
+        if bdd.migrer()? {
+            // Première utilisation : rien à charger, la base vient d'être créée.
+        }
+        let mut store = Self::memoire();
+        store.bdd = Some(bdd);
+        store.charger_bdd()?;
+        Ok(store)
     }
 
     pub fn dossier(&self) -> Option<&Path> {
         self.disque.as_deref()
     }
 
-    fn charger(&mut self) -> Resultat<()> {
-        let dossier = match self.disque.clone() {
-            Some(d) => d,
+    /// Charge toutes les tables depuis PostgreSQL (mêmes décodeurs que le mode
+    /// fichier : `fichier::decoder_*`, alimentés par `bdd::Bdd::charger`).
+    #[cfg(feature = "postgres")]
+    fn charger_bdd(&mut self) -> Resultat<()> {
+        // La connexion est sortie du champ le temps du chargement : les
+        // décodeurs écrivent dans `self` et ne peuvent pas emprunter `self.bdd`
+        // en même temps (le compilateur l'interdit, et il a raison).
+        let mut bdd = match self.bdd.take() {
+            Some(b) => b,
             None => return Ok(()),
         };
-        let meta = fichier::lire_meta(&dossier)?;
+        let resultat = self.decoder_bdd(&mut bdd);
+        self.bdd = Some(bdd);
+        resultat
+    }
+
+    #[cfg(feature = "postgres")]
+    fn decoder_bdd(&mut self, bdd: &mut crate::bdd::Bdd) -> Resultat<()> {
+        let meta = bdd.lire_meta()?;
+        self.appliquer_meta(&meta);
+        let mut decoder = |table: &'static str| -> Resultat<Vec<fichier::LigneTable>> {
+            bdd.charger(table)?
+                .into_iter()
+                .map(|valeurs| fichier::LigneTable::depuis_valeurs(table, valeurs))
+                .collect()
+        };
+        for l in decoder("societes")? {
+            self.societes.push(fichier::decoder_societe(&l)?);
+        }
+        for l in decoder("utilisateurs")? {
+            self.utilisateurs.push(fichier::decoder_utilisateur(&l)?);
+        }
+        for l in decoder("clients")? {
+            self.clients.push(fichier::decoder_client(&l)?);
+        }
+        for l in decoder("documents")? {
+            self.documents.push(fichier::decoder_document(&l)?);
+        }
+        for l in decoder("lignes")? {
+            let ligne = fichier::decoder_ligne(&l)?;
+            if let Some(doc) = self.documents.iter_mut().find(|d| d.id == ligne.document_id) {
+                doc.lignes.push(ligne);
+            }
+        }
+        for doc in self.documents.iter_mut() {
+            doc.lignes.sort_by_key(|l| l.position);
+        }
+        for l in decoder("paiements")? {
+            self.paiements.push(fichier::decoder_paiement(&l)?);
+        }
+        for l in decoder("ecritures")? {
+            self.ecritures.push(fichier::decoder_ecriture(&l)?);
+        }
+        for l in decoder("articles")? {
+            self.articles.push(fichier::decoder_article(&l)?);
+        }
+        for l in decoder("ventes")? {
+            self.ventes.push(fichier::decoder_vente(&l)?);
+        }
+        for l in decoder("taux_change")? {
+            self.taux.push(fichier::decoder_taux(&l)?);
+        }
+        for l in decoder("operations_bancaires")? {
+            self.operations.push(fichier::decoder_operation(&l)?);
+        }
+        for l in decoder("audit_log")? {
+            self.audit.push(fichier::decoder_audit(&l)?);
+        }
+        for l in decoder("sequences")? {
+            self.sequences.push(fichier::decoder_sequence(&l)?);
+        }
+        for l in decoder("sauvegardes")? {
+            self.sauvegardes.push(fichier::decoder_sauvegarde(&l)?);
+        }
+        for l in decoder("recurrences")? {
+            self.recurrences.push(fichier::decoder_recurrence(&l)?);
+        }
+        Ok(())
+    }
+
+    /// Applique les métadonnées du magasin (mêmes clés en fichier et en base).
+    fn appliquer_meta(&mut self, meta: &HashMap<String, String>) {
         self.societe_courante = meta
             .get("societe_courante")
             .and_then(|v| v.parse().ok())
@@ -345,6 +476,15 @@ impl Store {
             .and_then(|v| v.parse().ok())
             .unwrap_or(1)
             .max(1);
+    }
+
+    fn charger(&mut self) -> Resultat<()> {
+        let dossier = match self.disque.clone() {
+            Some(d) => d,
+            None => return Ok(()),
+        };
+        let meta = fichier::lire_meta(&dossier)?;
+        self.appliquer_meta(&meta);
 
         let decoder = |table: &str| fichier::lire_table(&dossier, table);
 
@@ -403,28 +543,30 @@ impl Store {
     }
 
     /// Écrit toutes les tables (une par fichier, écriture atomique).
-    pub fn persister(&mut self) -> Resultat<()> {
-        let dossier = match self.disque.clone() {
-            Some(d) => d,
-            None => return Ok(()),
-        };
+    /// Encode toutes les tables (lignes prêtes pour le fichier **ou** la base).
+    ///
+    /// Un seul encodage sert aux deux supports : un champ ajouté au modèle ne
+    /// peut donc pas être persisté dans un mode et oublié dans l'autre.
+    fn tables_encodees(&self) -> Resultat<Vec<(&'static str, Vec<Vec<String>>)>> {
+        let mut tables: Vec<(&'static str, Vec<Vec<String>>)> = Vec::new();
+
         let mut lignes = Vec::new();
         for s in &self.societes {
             lignes.push(fichier::encoder_societe(s)?);
         }
-        fichier::ecrire_table(&dossier, "societes", &lignes)?;
+        tables.push(("societes", lignes));
 
-        lignes = Vec::new();
+        let mut lignes = Vec::new();
         for u in &self.utilisateurs {
             lignes.push(fichier::encoder_utilisateur(u)?);
         }
-        fichier::ecrire_table(&dossier, "utilisateurs", &lignes)?;
+        tables.push(("utilisateurs", lignes));
 
-        lignes = Vec::new();
+        let mut lignes = Vec::new();
         for c in &self.clients {
             lignes.push(fichier::encoder_client(c)?);
         }
-        fichier::ecrire_table(&dossier, "clients", &lignes)?;
+        tables.push(("clients", lignes));
 
         let mut lignes_doc = Vec::new();
         let mut lignes_lignes = Vec::new();
@@ -434,76 +576,105 @@ impl Store {
                 lignes_lignes.push(fichier::encoder_ligne(l)?);
             }
         }
-        fichier::ecrire_table(&dossier, "documents", &lignes_doc)?;
-        fichier::ecrire_table(&dossier, "lignes", &lignes_lignes)?;
+        tables.push(("documents", lignes_doc));
+        tables.push(("lignes", lignes_lignes));
 
-        lignes = Vec::new();
+        let mut lignes = Vec::new();
         for p in &self.paiements {
             lignes.push(fichier::encoder_paiement(p)?);
         }
-        fichier::ecrire_table(&dossier, "paiements", &lignes)?;
+        tables.push(("paiements", lignes));
 
-        lignes = Vec::new();
+        let mut lignes = Vec::new();
         for e in &self.ecritures {
             lignes.push(fichier::encoder_ecriture(e)?);
         }
-        fichier::ecrire_table(&dossier, "ecritures", &lignes)?;
+        tables.push(("ecritures", lignes));
 
-        lignes = Vec::new();
+        let mut lignes = Vec::new();
         for a in &self.articles {
             lignes.push(fichier::encoder_article(a)?);
         }
-        fichier::ecrire_table(&dossier, "articles", &lignes)?;
+        tables.push(("articles", lignes));
 
-        lignes = Vec::new();
+        let mut lignes = Vec::new();
         for v in &self.ventes {
             lignes.push(fichier::encoder_vente(v)?);
         }
-        fichier::ecrire_table(&dossier, "ventes", &lignes)?;
+        tables.push(("ventes", lignes));
 
-        lignes = Vec::new();
+        let mut lignes = Vec::new();
         for t in &self.taux {
             lignes.push(fichier::encoder_taux(t)?);
         }
-        fichier::ecrire_table(&dossier, "taux_change", &lignes)?;
+        tables.push(("taux_change", lignes));
 
-        lignes = Vec::new();
+        let mut lignes = Vec::new();
         for o in &self.operations {
             lignes.push(fichier::encoder_operation(o)?);
         }
-        fichier::ecrire_table(&dossier, "operations_bancaires", &lignes)?;
+        tables.push(("operations_bancaires", lignes));
 
-        lignes = Vec::new();
+        let mut lignes = Vec::new();
         for e in &self.audit {
             lignes.push(fichier::encoder_audit(e)?);
         }
-        fichier::ecrire_table(&dossier, "audit_log", &lignes)?;
+        tables.push(("audit_log", lignes));
 
-        lignes = Vec::new();
-        for s in &self.sequences {
-            lignes.push(fichier::encoder_sequence(s)?);
+        let mut lignes = Vec::new();
+        for sq in &self.sequences {
+            lignes.push(fichier::encoder_sequence(sq)?);
         }
-        fichier::ecrire_table(&dossier, "sequences", &lignes)?;
+        tables.push(("sequences", lignes));
 
-        lignes = Vec::new();
-        for s in &self.sauvegardes {
-            lignes.push(fichier::encoder_sauvegarde(s)?);
+        let mut lignes = Vec::new();
+        for sv in &self.sauvegardes {
+            lignes.push(fichier::encoder_sauvegarde(sv)?);
         }
-        fichier::ecrire_table(&dossier, "sauvegardes", &lignes)?;
+        tables.push(("sauvegardes", lignes));
 
-        lignes = Vec::new();
+        let mut lignes = Vec::new();
         for r in &self.recurrences {
             lignes.push(fichier::encoder_recurrence(r)?);
         }
-        fichier::ecrire_table(&dossier, "recurrences", &lignes)?;
+        tables.push(("recurrences", lignes));
 
+        Ok(tables)
+    }
+
+    /// Métadonnées persistées à côté des tables.
+    fn meta_encodee(&self) -> HashMap<String, String> {
         let mut meta = HashMap::new();
-        meta.insert("societe_courante".to_string(), self.societe_courante.to_string());
+        meta.insert(
+            "societe_courante".to_string(),
+            self.societe_courante.to_string(),
+        );
         meta.insert("session".to_string(), self.session.clone());
         meta.insert("prochain_id".to_string(), self.prochain_id.to_string());
         meta.insert("version".to_string(), env!("CARGO_PKG_VERSION").to_string());
         meta.insert("schema".to_string(), orm::EMPREINTE_SCHEMA.to_string());
-        fichier::ecrire_meta(&dossier, &meta)?;
+        meta
+    }
+
+    /// Enregistre l'état sur le support courant (dossier de fichiers ou base).
+    pub fn persister(&mut self) -> Resultat<()> {
+        #[cfg(feature = "postgres")]
+        if self.bdd.is_some() {
+            let tables = self.tables_encodees()?;
+            let meta = self.meta_encodee();
+            let bdd = self.bdd.as_mut().expect("bdd présente");
+            bdd.enregistrer_tout(&tables, &meta)?;
+            return Ok(());
+        }
+
+        let dossier = match self.disque.clone() {
+            Some(d) => d,
+            None => return Ok(()),
+        };
+        for (table, lignes) in self.tables_encodees()? {
+            fichier::ecrire_table(&dossier, table, &lignes)?;
+        }
+        fichier::ecrire_meta(&dossier, &self.meta_encodee())?;
         Ok(())
     }
 
@@ -538,6 +709,49 @@ impl Store {
             ("sauvegardes", self.sauvegardes.len()),
             ("recurrences", self.recurrences.len()),
         ]
+    }
+
+    /// Nombre de lignes par table **telles qu'elles sont dans PostgreSQL**.
+    ///
+    /// `None` quand le magasin n'est pas connecté à une base. Sert à
+    /// `/admin bdd` : on vérifie ainsi que l'ORM a bien créé et rempli le
+    /// schéma, sans ouvrir un client SQL à côté.
+    #[cfg(feature = "postgres")]
+    pub fn compteurs_bdd(&mut self) -> Resultat<Option<Vec<(&'static str, i64)>>> {
+        match self.bdd.as_mut() {
+            Some(bdd) => Ok(Some(bdd.tables_presentes()?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Vide toutes les tables de la base (le schéma reste en place) et remet le
+    /// magasin en mémoire dans le même état — utile pour rejouer un scénario.
+    #[cfg(feature = "postgres")]
+    pub fn vider_bdd(&mut self) -> Resultat<()> {
+        {
+            let bdd = self
+                .bdd
+                .as_mut()
+                .ok_or_else(|| "aucune base connectée".to_string())?;
+            bdd.vider()?;
+        }
+        self.societes.clear();
+        self.utilisateurs.clear();
+        self.clients.clear();
+        self.documents.clear();
+        self.paiements.clear();
+        self.ecritures.clear();
+        self.articles.clear();
+        self.ventes.clear();
+        self.taux.clear();
+        self.operations.clear();
+        self.audit.clear();
+        self.sequences.clear();
+        self.sauvegardes.clear();
+        self.recurrences.clear();
+        self.societe_courante = 0;
+        self.prochain_id = 1;
+        Ok(())
     }
 
     // ---------------------------------------------------------- Sociétés
@@ -1935,6 +2149,12 @@ impl Store {
     // ---------------------------------------------------------- Sauvegardes (CDC §14)
 
     pub fn creer_sauvegarde(&mut self) -> Resultat<Sauvegarde> {
+        if self.en_base() {
+            return Err("en mode PostgreSQL, la sauvegarde est prise par `pg_dump` \
+                 (hors du binaire : copie à chaud gérée par le serveur) — \
+                 /admin export reste disponible pour un état daté en TSV"
+                .into());
+        }
         let dossier = self
             .disque
             .clone()
@@ -1981,6 +2201,11 @@ impl Store {
 
     /// Restauration complète (OBJ-5 : ≤ 30 min).
     pub fn restaurer_sauvegarde(&mut self, nom: &str) -> Resultat<String> {
+        if self.en_base() {
+            return Err("en mode PostgreSQL, la restauration se fait par `pg_restore` \
+                 ou une transaction SQL — la commande n'est pas exposée par l'ERP"
+                .into());
+        }
         let dossier = self
             .disque
             .clone()

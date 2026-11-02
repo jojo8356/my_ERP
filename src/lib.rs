@@ -10,6 +10,8 @@
 //!   lecture tolérante, `meta.tsv`), utilisé par le [`store`] local.
 //! - [`orm`]      : client Rustorm généré à la compilation depuis
 //!   `rustorm/schema.rsm` (empreinte, colonnes, DDL PostgreSQL).
+//! - [`bdd`]      : backend PostgreSQL piloté par Rustorm (feature `postgres`,
+//!   désactivée par défaut : l'ERP fonctionne sans serveur).
 //! - [`store`]    : magasin unique (mémoire ou dossier), multi-société,
 //!   documents, paiements, comptabilité, audit chaîné, sauvegardes.
 //! - [`compta`]   : plan comptable, journaux, FEC, balance, TVA.
@@ -21,6 +23,8 @@
 //! - [`cli`]      : navigation par chemins, options, pagination, REPL.
 //! - [`tui`]      : écran plein terminal (Ratatui), offre visuelle du CLI.
 
+#[cfg(feature = "postgres")]
+pub mod bdd;
 pub mod cli;
 pub mod compta;
 pub mod csv;

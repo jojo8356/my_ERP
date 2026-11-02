@@ -76,9 +76,41 @@ Dossier modifiable via `ERP_DONNEES_DIR` ou `--donnees <dossier>` ; `--memoire`
 automatiquement au premier démarrage (ENF-PORT-01). Sauvegarde = `/admin
 sauvegarde` (ou copie du dossier) ; restauration = `/admin restaurer <nom>`.
 
-PostgreSQL n’est **pas** requis : la migration complète
-(`/admin schema --sql`, produite par Rustorm) est prête pour le jour où un
-serveur existera (jalons J5/J6, `decisions/ADR-002` et `ADR-006`).
+### Base de données PostgreSQL (optionnelle, par Rustorm)
+
+Le mode par défaut ne demande **aucun serveur**. Le même binaire sait aussi
+travailler sur PostgreSQL : c’est Rustorm qui crée le schéma (migration), lit et
+écrit les tables, et regroupe chaque enregistrement dans une transaction
+(ADR-009). Toutes les commandes restent identiques.
+
+```bash
+sudo apt install libpq-dev        # connecteur libpq (une seule fois)
+cargo build --features postgres
+export ERP_DATABASE_URL=postgres://erp:erp@127.0.0.1:5432/erp
+./target/debug/my-erp /admin bdd            # support, tables et lignes réelles
+./target/debug/my-erp /clients              # mêmes commandes, état dans la base
+./target/debug/my-erp --bdd "$ERP_DATABASE_URL" /admin bdd vider
+./target/debug/my-erp /admin schema --sql   # la migration exacte, hors ligne
+```
+
+Sans `--features postgres`, l’option `--bdd` répond explicitement qu’il faut
+recompiler : aucune dépendance à `libpq` n’est imposée au mode fichiers.
+
+### Tester tout, en une commande
+
+```bash
+./test-all.sh                                  # 7 étapes, sans base de données
+./test-all.sh --bdd postgres://erp:erp@127.0.0.1/erp   # + PostgreSQL (Rustorm)
+./test-all.sh --rapide --verbose               # itération locale
+```
+
+`test-all.sh` enchaîne : contrôle de l’environnement, contrôles statiques du
+modèle et des modules, compilation, rustfmt/clippy (signalés, non bloquants),
+tests unitaires, **recette fonctionnelle complète** (clients, devis, factures,
+PDF/UBL, e-mails, paiements, Vinted, comptabilité, FEC, TVA, rapprochement,
+sécurité/2FA, multi-société, sauvegarde, pagination, JSON/CSV, audit), puis la
+base PostgreSQL si une URL est fournie. Résumé final ligne par ligne, code de
+sortie 0 seulement si tout est vert.
 
 ### Documentation des décisions
 

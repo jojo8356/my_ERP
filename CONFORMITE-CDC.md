@@ -7,9 +7,11 @@ ouvert. Il décrit l'état du code, pas une intention.
 Statuts : **✔ tenu** (implémenté et testé) · **◑ partiel** (implémenté avec une
 limite explicite) · **✘ non couvert** (assumé en v1.2, justification donnée).
 
-Vérification de référence : `cargo test` (111 tests) et
-`bash scripts/scenario-demo.sh` (recette de bout en bout, process séparés),
-tous deux exécutés par la CI (`.github/workflows/ci.yml`).
+Vérification de référence : **`./test-all.sh`** (une seule commande : contrôles
+statiques, compilation, `cargo test`, recette de bout en bout sur un dossier de
+données réel, puis PostgreSQL si une URL est fournie). La CI exécute ce script
+dans deux jobs : sans base, et avec un service PostgreSQL 16
+(`--features postgres --bdd …`).
 
 ## Socle
 
@@ -79,10 +81,10 @@ tous deux exécutés par la CI (`.github/workflows/ci.yml`).
 | ENF-PERF-01 Commande courante < 500 ms, démarrage < 300 ms | ◑ | Aucune requête réseau, aucune base : lecture d'une poignée de fichiers TSV (< 10 000 lignes) par commande. Non mesuré automatiquement (pas d'outil de benchmark hors-ligne) ; volume cible tenu par construction |
 | ENF-SIMPL-01 Binaire unique, installation simple, code métier couvert | ◑ | `cargo build --release` → un seul binaire ; les **règles de calcul sont couvertes à 100 %** (montants, TVA, remises, pénalités, amortissement des avoirs). Couverture globale **non instrumentée** (pas de `tarpaulin` dans l'environnement) : 111 tests |
 | ENF-ERG-01 Aide contextuelle, messages français actionnables | ✔ | `aide_contexte` (`/aide <chemin>`, `?`), tous les `Err` proposent la commande à lancer ; tests qui vérifient le texte des messages |
-| ENF-FIA-01 Pas d'écriture à moitié enregistrée, reprise après coupure | ◑ | Écriture atomique fichier temporaire + renommage (`fichier::ecrire_table`), sauvegardes datées avec empreinte. Limite : pas de transaction multi-tables (une coupure entre deux tables se répare par restauration) |
-| ENF-SCAL-01 ×2 utilisateurs, ×10 lignes, module ajoutable | ◑ | Comptes/rôles prêts ; 10 000 lignes/module tiennent en mémoire. Limite : stockage **mono-processus** (ADR-006) — le passage à PostgreSQL est la réponse prévue |
+| ENF-FIA-01 Pas d'écriture à moitié enregistrée, reprise après coupure | ✔ | **Base** : toutes les tables sont remplacées dans **une transaction** Rustorm (`bdd::Bdd::enregistrer_tout`, rollback sur erreur). **Fichiers** : écriture atomique par table (`fichier::ecrire_table`), sauvegardes datées avec empreinte — une coupure entre deux tables se répare par restauration |
+| ENF-SCAL-01 ×2 utilisateurs, ×10 lignes, module ajoutable | ✔ | Comptes/rôles prêts ; 10 000 lignes/module tiennent en mémoire ; **PostgreSQL disponible** (`--features postgres`, ADR-009) pour le multi-processus et la croissance |
 | ENF-COMPAT-01 Linux/macOS/Windows, exports ouverts | ✔ | Rust std + `crossterm`/`ratatui` (multiplateforme) ; exports CSV, PDF, UBL, FEC |
-| ENF-PORT-01 Données exportables, aucun verrouillage | ◑ | TSV lisibles, CSV/PDF/UBL/FEC, import de l'ancien `etat.tsv` v1. Le « dump PostgreSQL » du CDC n'a pas d'objet tant qu'il n'y a pas de base (ADR-002/006) |
+| ENF-PORT-01 Données exportables, aucun verrouillage | ✔ | TSV lisibles, CSV/PDF/UBL/FEC, import de l'ancien `etat.tsv` v1 ; en mode base, `pg_dump` est la voie normale (message explicite de `/admin sauvegarde`) |
 | ENF-COUT-01 100 % open source, 0 licence | ✔ | Dépendances : Chromat et Rustorm (auteur du projet), Ratatui/Crossterm (MIT), aucune licence payante |
 
 ## Sécurité et RGPD
@@ -105,8 +107,9 @@ tous deux exécutés par la CI (`.github/workflows/ci.yml`).
    agréée et un modèle « achat/fournisseur » (le schéma ne le porte pas encore).
 2. **SMTP réel** (INT-01) : `messagerie::enveloppe()` produit le message
    complet ; il manque uniquement le transport authentifié.
-3. **PostgreSQL** : migration prête (`/admin schema --sql`), stockage
-   mono-processus en attendant (ADR-006).
+3. **PostgreSQL** : mode complet et testé (`--features postgres`, ADR-009) —
+   restent à ajouter les clés étrangères déclarées au schéma et la sauvegarde
+   applicative (`pg_dump` côté serveur pour l'instant).
 4. **Acomptes avant facture** (EF-FAC-04) : seuls les paiements après émission
    sont gérés.
 5. **OFX** (EF-CPT-04) : CSV seulement.
