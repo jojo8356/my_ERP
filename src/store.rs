@@ -237,6 +237,10 @@ pub struct StatsVinted {
     pub articles_vendus: usize,
     pub valeur_stock: Cents,
     pub ca_personnel: Cents,
+    /// Part du stock écoulé : articles vendus / (en stock + vendus), en %.
+    pub taux_ecoulement: i64,
+    /// Délai moyen entre l'achat et la vente, en jours (0 si inconnu).
+    pub delai_moyen_jours: i64,
 }
 
 // ------------------------------------------------------------ Le magasin
@@ -1543,11 +1547,18 @@ impl Store {
                 stats.articles_vendus += 1;
             }
         }
+        let mut delais: Vec<i64> = Vec::new();
         for vente in self.ventes_annee(annee) {
             let article = match self.article_par_id(vente.article_id) {
                 Ok(a) => a,
                 Err(_) => continue,
             };
+            if date_valide(&article.date_achat) && date_valide(&vente.date_vente) {
+                let jours = jours_entre(&article.date_achat, &vente.date_vente);
+                if jours >= 0 {
+                    delais.push(jours);
+                }
+            }
             stats.nb_ventes += 1;
             match vente.regime {
                 RegimeVente::AchatRevente => {
@@ -1566,6 +1577,19 @@ impl Store {
         tailles.sort_by(|a, b| b.2.cmp(&a.2));
         stats.par_marque = marques;
         stats.par_taille = tailles;
+        // Rotation (EF-VIN-04) : quelle part du stock a tourné, et en combien
+        // de temps en moyenne. Deux indicateurs simples, lisibles au quotidien.
+        let total = stats.articles_en_stock + stats.articles_vendus;
+        stats.taux_ecoulement = if total == 0 {
+            0
+        } else {
+            (stats.articles_vendus as i64 * 100) / total as i64
+        };
+        stats.delai_moyen_jours = if delais.is_empty() {
+            0
+        } else {
+            delais.iter().sum::<i64>() / delais.len() as i64
+        };
         stats
     }
 

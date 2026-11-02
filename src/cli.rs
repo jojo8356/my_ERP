@@ -230,6 +230,7 @@ Navigation par chemins (comme des URL, à connaître par cœur) :
   erp /vinted nouveau --marque Zara --description \"Veste\" --taille M --composition \"100 % coton\" --prix-achat 8,00 --regime personnel
   erp /vinted vendre 3 --prix 25,00 --frais 2,00
   erp /vinted stats              marges par marque/taille, rotation, DAC7
+  erp /vinted statut 3 en_ligne  état de l'article (stock, en ligne, vendu)
   erp /vinted fiche 3            annonce prête à coller
   erp /vinted importer ventes.csv   /vinted exporter articles.csv
   erp /compta seuils             CA ventes/services vs plafonds micro 2026 (%)
@@ -275,7 +276,8 @@ fn aide_contexte(chemin: &[String]) -> &'static str {
 /vinted nouveau --marque … --description … --composition \"…\" --prix-achat 8,00
 /vinted vendre <n°> --prix 25,00 --frais 2,00 [--acheteur …] [--reference …]
 /vinted stats                marges par marque et taille, rotation, alerte DAC7
-/vinted fiche <n°>           annonce exportable
+/vinted fiche <n°>           annonce exportable (ou simplement `/vinted <n°>`)
+/vinted statut <n°> en_stock|en_ligne|vendu   état de l'article
 /vinted importer <fichier.csv> | exporter <fichier.csv>",
         Some("compta") => "\
 /compta seuils               CA vs plafonds micro et franchise TVA (%)
@@ -289,6 +291,8 @@ fn aide_contexte(chemin: &[String]) -> &'static str {
 /societes                    liste et bascule
 /societes nouvelle --nom \"…\" --siren … --regime franchise|reel
 /societes basculer <nom>     change de société courante
+/societes/<nom>              raccourci de bascule (chemin)
+/societes regime franchise|reel   régime de TVA de la société courante
 /societe modifier --siren … --adresse … --ville … --delai 30
 /societe regime franchise | reel",
         Some("devises") => "\
@@ -1785,7 +1789,39 @@ impl App {
                 self.importer_ventes(fichier, sortie)
             }
             Some("exporter") => self.exporter_articles(rest.get(1).map(|s| s.to_string()), sortie),
-            _ => Err("usage : /vinted [nouveau … | vendre <n°> … | stats | fiche <n°> | importer <csv> | exporter <csv>]".into()),
+            Some("statut") => {
+                let id: i64 = rest
+                    .get(1)
+                    .ok_or("usage : /vinted statut <n° article> en_stock|en_ligne|vendu")?
+                    .parse()
+                    .map_err(|_| "identifiant d'article illisible".to_string())?;
+                let statut = statut_article(
+                    rest.get(2)
+                        .ok_or("précisez le statut : en_stock | en_ligne | vendu")?,
+                )?;
+                let mut article = self.store.article_par_id(id)?;
+                article.statut = statut.to_string();
+                let article = self.store.modifier_article(article)?;
+                self.store.journaliser(
+                    "article.statut",
+                    &format!("n°{} -> {}", article.id, article.statut),
+                )?;
+                ecrire(
+                    sortie,
+                    theme::succes(format!(
+                        "✓ Article n°{} ({}) — statut : {}",
+                        article.id, article.description, article.statut
+                    )),
+                )
+            }
+            Some(premier) if premier.chars().all(|c| c.is_ascii_digit()) => {
+                // `/vinted 3` = fiche de l'article n° 3.
+                let id: i64 = premier.parse().unwrap_or(0);
+                let article = self.store.article_par_id(id)?;
+                ecrire(sortie, theme::titre(format!("Annonce — article n°{id}")))?;
+                ecrire(sortie, article.annonce())
+            }
+            _ => Err("usage : /vinted [nouveau … | vendre <n°> … | statut <n°> <état> | stats | fiche <n°> | importer <csv> | exporter <csv>]".into()),
         }
     }
 
@@ -1845,6 +1881,13 @@ impl App {
                 stats.articles_en_stock,
                 format_eur(stats.valeur_stock),
                 stats.articles_vendus
+            ),
+        )?;
+        ecrire(
+            sortie,
+            format!(
+                "  Rotation : {} % du stock écoulé · délai moyen achat → vente {} jour(s)",
+                stats.taux_ecoulement, stats.delai_moyen_jours
             ),
         )?;
         if stats.marge != 0 {
@@ -2396,10 +2439,32 @@ impl App {
                     theme::succes(format!("✓ Régime TVA : {}", regime.libelle())),
                 )
             }
-            Some("detail") | None if !rest.is_empty() && premiere.as_deref() != Some("detail") => {
-                unreachable!()
+            _ => {
+                // `/societes/<nom>` : bascule directe (CDC EF-SOC-01). On ne
+                // bascule que sur un nom réellement existant, sinon on affiche
+                // la fiche : une faute de frappe ne change jamais de société.
+                let recherche = rest.join(" ");
+                let cible = recherche.trim().to_lowercase();
+                let correspond = !cible.is_empty()
+                    && self.store.societes().iter().any(|s| {
+                        let nom = s.nom.to_lowercase();
+                        nom == cible || nom.contains(&cible)
+                    });
+                if correspond {
+                    let societe = self.store.basculer_societe(&recherche)?;
+                    ecrire(
+                        sortie,
+                        theme::succes(format!(
+                            "✓ Société courante : {} ({} · devise {})",
+                            societe.nom,
+                            societe.regime.libelle(),
+                            societe.devise
+                        )),
+                    )
+                } else {
+                    self.detail_societes(sortie)
+                }
             }
-            _ => self.detail_societes(sortie),
         }
     }
 
@@ -2964,6 +3029,20 @@ fn format_octets(octets: i64) -> String {
 }
 
 /// Parse une ligne de facturation « désignation;quantité;prix HT[;taux bp][;remise bp] ».
+/// Statut d'un article Vinted (EF-VIN-01), avec les formes naturelles en
+/// français et les codes persistés (ASCII, sans espace).
+fn statut_article(texte: &str) -> Resultat<&'static str> {
+    let propre = texte.trim().to_lowercase().replace('-', "_").replace(' ', "_");
+    match propre.as_str() {
+        "en_stock" | "stock" | "disponible" => Ok("en_stock"),
+        "en_ligne" | "ligne" | "publie" | "publié" => Ok("en_ligne"),
+        "vendu" | "vendu_" | "vendre" => Ok("vendu"),
+        autre => Err(format!(
+            "statut « {autre} » inconnu — valeurs : en_stock | en_ligne | vendu"
+        )),
+    }
+}
+
 /// Taux exprimé en **points de base** (`2000` = 20 %), comme le schéma et le
 /// CDC ; la forme `20%` est acceptée par confort de saisie.
 ///
@@ -3226,6 +3305,29 @@ mod tests {
         assert!(texte.starts_with("JournalCode"), "{texte}");
         let texte = lancer(&mut app, "/compta balance");
         assert!(texte.contains("Clients"), "{texte}");
+    }
+
+    #[test]
+    fn bascule_de_societe_par_le_chemin() {
+        let mut app = app();
+        lancer(&mut app, "/societes nouvelle --nom \"Vinted Pro\" --regime reel");
+        let texte = lancer(&mut app, "/societes/vinted pro");
+        assert!(texte.contains("Société courante : Vinted Pro"), "{texte}");
+        // Un nom inexistant n'effectue aucune bascule : la fiche est affichée.
+        let texte = lancer(&mut app, "/societes/inconnue");
+        assert!(texte.contains("Vinted Pro"), "{texte}");
+    }
+
+    #[test]
+    fn statut_d_article_vinted() {
+        let mut app = app();
+        lancer(&mut app, "/vinted nouveau --marque Zara --description \"Veste\" --composition \"100 % coton\" --prix-achat 8,00");
+        let article = app.store.articles()[0].id;
+        let texte = lancer(&mut app, &format!("/vinted statut {article} en ligne"));
+        assert!(texte.contains("statut : en_ligne"), "{texte}");
+        let texte = lancer(&mut app, &format!("/vinted {article}"));
+        assert!(texte.contains("Annonce"), "{texte}");
+        assert!(lancer(&mut app, &format!("/vinted statut {article} perdu")).contains("inconnu"));
     }
 
     #[test]

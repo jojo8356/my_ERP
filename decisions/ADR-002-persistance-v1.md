@@ -32,3 +32,14 @@ l’ERP dépend désormais de **Chromat v0.1.1** pour toutes ses couleurs
 terminal. Chromat n’a elle-même aucune dépendance. Le reste de cet ADR
 (persistance fichier derrière le trait `Store`, PostgreSQL au jalon J5)
 reste inchangé.
+
+## Amendement (ADR-006, 02/11/2026)
+Le stockage n'est plus un unique `etat.tsv` : c'est désormais **une table du
+schéma Rustorm = un fichier** `donnees/tables/<table>.tsv`, dont l'en-tête est
+exactement la liste de colonnes générée depuis `rustorm/schema.rsm`, plus un
+`meta.tsv` (société courante, session, compteur d'identifiants). Le trait
+`Store` a disparu au profit d'un type unique à deux modes (`Store::memoire()`,
+`Store::ouvrir(dossier)`), ce qui supprime la duplication entre mémoire et
+disque. L'esprit de cet ADR est inchangé : **aucune base de données en V1**,
+PostgreSQL au jalon J5 avec une migration déjà écrite (`/admin schema --sql`).
+L'ancien `etat.tsv` reste importé automatiquement (ENF-PORT-01).
