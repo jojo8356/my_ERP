@@ -24,7 +24,13 @@ jobs:
           set +e
           export ERP_DONNEES_DIR=/tmp/erp-demo
           bash scripts/scenario-demo.sh > /tmp/scenario.log 2>&1; code=$?
-          tail -30 /tmp/scenario.log; exit $code
+          tail -30 /tmp/scenario.log
+          if [ $code -ne 0 ]; then
+            # Le journal complet n'est pas lisible hors GitHub : la fin du
+            # scénario (commande fautive + message français) part en annotation.
+            python3 -c "import sys; d=open('/tmp/scenario.log',encoding='utf-8',errors='replace').read()[-4000:]; print('::error::'+d.replace('%','%25').replace('\n','%0A'))"
+          fi
+          exit $code
       - name: Diagnostic (digest des erreurs dans une annotation unique)
         if: failure()
         run: |
@@ -44,7 +50,7 @@ jobs:
               )
 
           morceaux = []
-          for chemin in ("/tmp/tests.log", "/tmp/scenario.log", "/tmp/build.log"):
+          for chemin in ("/tmp/tests.log", "/tmp/build.log"):
               if not os.path.exists(chemin):
                   continue
               lignes = open(chemin, encoding="utf-8", errors="replace").read().splitlines()
