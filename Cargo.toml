@@ -18,6 +18,12 @@ rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0" }
 # Feature « postgres » volontairement absente : voir ADR-006 (aucune base en v1).
 # rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0", features = ["postgres"] }
 
+[features]
+# Le client Rustorm généré contient `#[cfg(feature = "postgres")]` pour son pool.
+# La feature est déclarée ici (sans dépendance associée) pour que `rustc` sache
+# qu'elle existe, mais **elle n'est jamais activée** : aucune base en v1 (ADR-006).
+postgres = []
+
 [build-dependencies]
 rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0" }
 

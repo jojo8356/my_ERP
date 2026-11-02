@@ -2062,7 +2062,7 @@ impl App {
 
     // ---------------------------------------------------------- Comptabilité
 
-    fn cmd_compta(&mut self, rest: &[&str], options: &Options, sortie: &mut dyn Write) -> Resultat<()> {
+    fn cmd_compta(&mut self, rest: &[&str], _options: &Options, sortie: &mut dyn Write) -> Resultat<()> {
         match rest.first().map(|s| s.to_lowercase()).as_deref() {
             Some("seuils") => self.seuils(sortie),
             Some("fec") => {
