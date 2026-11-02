@@ -425,11 +425,14 @@ etape_base() {
     printf '  %s✗%s binaire absent : compilez d’abord (étape 3)\n' "$ROUGE" "$NEUTRE" >&2
     return 1
   fi
-  if ! "$BIN" /admin bdd 2>&1 | grep -q 'PostgreSQL'; then
-    printf '  %s✗%s le binaire ne connaît pas la base (recompiler avec --features postgres)\n' \
-      "$ROUGE" "$NEUTRE" >&2
+  # Le binaire doit avoir été compilé avec la feature ; sinon `/admin bdd` le dit
+  # explicitement (et l'étape ne peut pas se poursuivre).
+  if "$BIN" /admin bdd 2>&1 | grep -q 'sans la feature'; then
+    printf '  %s✗%s binaire compilé sans la feature postgres\n' "$ROUGE" "$NEUTRE" >&2
+    printf '        relancez : %s --features postgres%s\n' "$0" "" >&2
     return 1
   fi
+  printf '  %s✓%s binaire compilé avec le connecteur PostgreSQL de Rustorm\n' "$VERT" "$NEUTRE" >&2
 
   # 7.2 migration par l'ORM puis état de la base
   if "$BIN" --bdd "$BASE_URL" /admin bdd >"$ref" 2>&1; then
