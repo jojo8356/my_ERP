@@ -4064,6 +4064,11 @@ mod tests {
     fn l_invite_du_repl_rappelle_societe_et_session() {
         let mut app = app();
         lancer(&mut app, "/societes nouvelle --nom \"Atelier Bis\"");
+        // Le premier compte doit être administrateur (règle du magasin).
+        lancer(
+            &mut app,
+            "/utilisateurs nouveau admin --mot-de-passe \"MotDePasse123!\" --role admin",
+        );
         lancer(
             &mut app,
             "/utilisateurs nouveau jojo --mot-de-passe \"MotDePasse123!\"",

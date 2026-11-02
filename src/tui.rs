@@ -1374,6 +1374,11 @@ mod tests {
     #[test]
     fn le_selecteur_de_sessions_ouvre_une_connexion_masquee() {
         let mut app = App::memoire();
+        // Le premier compte doit être administrateur (règle du magasin).
+        lancer_cli(
+            &mut app,
+            "/utilisateurs nouveau admin --mot-de-passe \"MotDePasse123!\" --role admin",
+        );
         lancer_cli(
             &mut app,
             "/utilisateurs nouveau jojo --mot-de-passe \"MotDePasse123!\" --role utilisateur",
@@ -1381,9 +1386,20 @@ mod tests {
         let mut vue = Vue::nouvelle();
         vue.touche(&mut app, KeyEvent::from(KeyCode::Char('u')));
         let sel = vue.selecteur.as_ref().expect("sélecteur de sessions");
-        assert_eq!(sel.options.len(), 1);
-        assert_eq!(sel.options[0].libelle, "jojo");
-        assert!(sel.options[0].detail.contains("utilisateur"), "{:?}", sel.options[0].detail);
+        assert_eq!(sel.options.len(), 2, "une ligne par compte");
+        let position = sel
+            .options
+            .iter()
+            .position(|o| o.libelle == "jojo")
+            .expect("le compte jojo est proposé");
+        assert!(
+            sel.options[position].detail.contains("utilisateur"),
+            "{:?}",
+            sel.options[position].detail
+        );
+        for _ in 0..position {
+            vue.touche(&mut app, KeyEvent::from(KeyCode::Down));
+        }
         // Entrée : le mot de passe est demandé, jamais affiché.
         vue.touche(&mut app, KeyEvent::from(KeyCode::Enter));
         let form = vue.formulaire.as_ref().expect("formulaire de connexion");
@@ -1400,11 +1416,17 @@ mod tests {
         assert!(vue.formulaire.is_none(), "{:?}", vue.formulaire);
         assert_eq!(app.store.session(), "jojo");
         assert!(vue.message.contains("Connecté"), "{}", vue.message);
-        // Le sélecteur propose alors la session locale (déconnexion).
+        // Le sélecteur propose alors la session locale (déconnexion) et marque
+        // le compte connecté.
         vue.touche(&mut app, KeyEvent::from(KeyCode::Char('u')));
         let sel = vue.selecteur.as_ref().unwrap();
         assert_eq!(sel.options[0].libelle, "Session locale");
-        assert!(sel.options[1].courant, "le compte connecté est marqué");
+        let jojo = sel
+            .options
+            .iter()
+            .find(|o| o.libelle == "jojo")
+            .expect("compte jojo");
+        assert!(jojo.courant, "le compte connecté est marqué");
         vue.touche(&mut app, KeyEvent::from(KeyCode::Enter));
         assert_eq!(app.store.session(), "local");
     }
