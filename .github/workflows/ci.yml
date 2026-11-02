@@ -54,7 +54,9 @@ jobs:
                       bloc.extend(l for l in lignes[i:i + 6] if l.strip())
               if bloc:
                   morceaux.append(f"=== {chemin} ===")
-                  morceaux.extend(bloc[:60])
+                  morceaux.extend(bloc[:40])
+              morceaux.append(f"=== {chemin} (fin) ===")
+              morceaux.extend(lignes[-20:])
           digest = "\n".join(morceaux)[:7000] or "aucune ligne d'erreur reconnue"
           print("::error::" + digest.replace("%", "%25").replace("\n", "%0A"))
           PY
