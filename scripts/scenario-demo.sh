@@ -9,6 +9,11 @@ export ERP_DONNEES_DIR="${ERP_DONNEES_DIR:-donnees}"
 DONNEES="$ERP_DONNEES_DIR"
 mkdir -p "$DONNEES/exports"
 
+echo "── 0. Identité de l'émetteur (mentions obligatoires, CDC §11.1)"
+$ERP /societe modifier --nom "Atelier Dupont" --siren 123456789 --adresse "1 rue de la Paix" \
+  --cp 06000 --ville Nice --email contact@example.fr --forme micro-entreprise >/dev/null
+$ERP /admin mentions | head -4
+
 echo "── 1. Création d'un client"
 $ERP /clients nouveau --nom "Atelier Dupont" --type pro --email contact@example.fr --ville Nice
 
