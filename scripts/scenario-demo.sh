@@ -127,8 +127,12 @@ $ERP /clients nouveau --nom "Piste Médicale" --type pro --prospect --email pist
   grep "Prospect n°"
 $ERP /prospects | grep "Piste Médicale"
 $ERP /clients --clients | grep -v "Piste Médicale" >/dev/null
-$ERP /devis nouvelle --client piste --ligne "Audit sécurité;1;900,00" | grep "devis DEV-"
-DEVIS=$($ERP /devis --csv | sed -n '2p' | cut -d';' -f1)
+# Le numéro est lu sur la sortie de création : la liste peut déjà contenir
+# d'autres devis (étape 10), et on veut celui du prospect.
+DEVIS=$($ERP /devis nouvelle --client piste --ligne "Audit sécurité;1;900,00" |
+        grep -oE "DEV-[0-9]{4}-[0-9]{4}" | sed -n '1,1p')
+test -n "$DEVIS"
+echo "    devis créé pour un prospect : $DEVIS"
 $ERP /devis "$DEVIS" envoyer >/dev/null
 $ERP /devis "$DEVIS" accepter >/dev/null
 # Un prospect ne se facture pas tant qu'il n'est pas converti.
