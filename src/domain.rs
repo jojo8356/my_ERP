@@ -11,6 +11,22 @@ use std::fmt;
 /// Montant en centimes (jamais de flottant pour l'argent — CDC §5.3).
 pub type Cents = i64;
 
+/// Division entière avec arrondi **au plus proche, loin de zéro**.
+///
+/// La division entière de Rust tronque vers zéro : `-500 / 1000` vaut `0` alors
+/// que `500 / 1000` arrondi vaut `1`. Sans ce traitement symétrique, un avoir
+/// (montants négatifs) ne serait pas exactement l'opposé de la facture qu'il
+/// corrige — écart d'un centime sur chaque ligne, refusé en comptabilité.
+/// `diviseur` doit être positif.
+pub fn arrondi(dividende: i64, diviseur: i64) -> i64 {
+    debug_assert!(diviseur > 0);
+    if dividende >= 0 {
+        (dividende + diviseur / 2) / diviseur
+    } else {
+        (dividende - diviseur / 2) / diviseur
+    }
+}
+
 pub fn format_eur(cents: Cents) -> String {
     let sign = if cents < 0 { "-" } else { "" };
     let abs = cents.unsigned_abs();
@@ -343,9 +359,8 @@ impl Ligne {
 
     /// Total HT de la ligne, remise déduite.
     pub fn total_ht(&self) -> Cents {
-        let brut = (self.quantite_milli * self.prix_unitaire_ht + 500) / 1000;
-        let remise = self.montant_remise();
-        brut - remise
+        let brut = arrondi(self.quantite_milli * self.prix_unitaire_ht, 1000);
+        brut - self.montant_remise()
     }
 
     /// Montant de la remise (arrondi au centime).
@@ -353,14 +368,14 @@ impl Ligne {
         if self.remise_bp <= 0 {
             return 0;
         }
-        let brut = (self.quantite_milli * self.prix_unitaire_ht + 500) / 1000;
-        (brut * i64::from(self.remise_bp) + 5000) / 10_000
+        let brut = arrondi(self.quantite_milli * self.prix_unitaire_ht, 1000);
+        arrondi(brut * i64::from(self.remise_bp), 10_000)
     }
 
     pub fn total_tva(&self, regime: RegimeTva, taux_effectif_bp: i32) -> Cents {
         match regime {
             RegimeTva::Franchise => 0,
-            RegimeTva::Reel => (self.total_ht() * i64::from(taux_effectif_bp) + 5000) / 10_000,
+            RegimeTva::Reel => arrondi(self.total_ht() * i64::from(taux_effectif_bp), 10_000),
         }
     }
 

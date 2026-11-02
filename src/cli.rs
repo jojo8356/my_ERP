@@ -2964,6 +2964,28 @@ fn format_octets(octets: i64) -> String {
 }
 
 /// Parse une ligne de facturation « désignation;quantité;prix HT[;taux bp][;remise bp] ».
+/// Taux exprimé en **points de base** (`2000` = 20 %), comme le schéma et le
+/// CDC ; la forme `20%` est acceptée par confort de saisie.
+///
+/// Ne pas utiliser `csv::taux_bp` ici : il interprète son argument comme un
+/// pourcentage (`20` → 2 000 bp), ce qui donnerait 200 000 bp (= 2 000 %) pour
+/// la saisie documentée `;2000`.
+fn bp_depuis_texte(texte: &str) -> Resultat<i32> {
+    let valeur = texte.trim();
+    if valeur.is_empty() {
+        return Ok(0);
+    }
+    if let Some(pourcentage) = valeur.strip_suffix('%') {
+        return csv::taux_bp(pourcentage);
+    }
+    valeur.parse::<i32>().map_err(|_| {
+        format!(
+            "taux illisible : « {texte} » — points de base attendus (2000 = 20 %), \
+             ou pourcentage explicite (20%)"
+        )
+    })
+}
+
 pub fn parser_ligne(s: &str) -> Resultat<Ligne> {
     let parties: Vec<&str> = s.split(';').collect();
     if parties.len() < 3 {
@@ -2974,11 +2996,11 @@ pub fn parser_ligne(s: &str) -> Resultat<Ligne> {
     let quantite = csv::quantite_milli(parties[1])?;
     let prix = parse_eur(parties[2].trim())?;
     let tva_bp = match parties.get(3) {
-        Some(valeur) if !valeur.trim().is_empty() => csv::taux_bp(valeur)?,
+        Some(valeur) if !valeur.trim().is_empty() => bp_depuis_texte(valeur)?,
         _ => 2_000,
     };
     let remise_bp = match parties.get(4) {
-        Some(valeur) if !valeur.trim().is_empty() => csv::taux_bp(valeur)?,
+        Some(valeur) if !valeur.trim().is_empty() => bp_depuis_texte(valeur)?,
         _ => 0,
     };
     let mut ligne = Ligne::new(parties[0].trim(), 0.0, prix, tva_bp);
@@ -3134,7 +3156,10 @@ mod tests {
         let mut app = app();
         lancer(&mut app, "/societe modifier --siren 123456789 --adresse \"1 rue de la Paix\" --ville Nice");
         let texte = lancer(&mut app, "/clients nouveau --nom \"Atelier Dupont\" --type pro --email a@b.fr");
-        assert!(texte.contains("Client n°1"), "{texte}");
+        // Les identifiants sont alloués par le magasin, pas par table :
+        // la société (création implicite) a déjà consommé les premiers.
+        assert!(texte.contains("Client n°"), "{texte}");
+        assert!(texte.contains("Atelier Dupont"), "{texte}");
         let texte = lancer(
             &mut app,
             "/factures nouvelle --client dupont --ligne \"Maintenance;2;500,00;2000\"",
