@@ -159,7 +159,9 @@ etape_environnement() {
   printf '  branche     : %s\n' "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '-')" >&2
   printf '  rustfmt     : %s\n' "$(command -v rustfmt >/dev/null 2>&1 && echo présent || echo absent)" >&2
   printf '  clippy      : %s\n' "$(cargo clippy --version >/dev/null 2>&1 && echo présent || echo absent)" >&2
-  printf '  base visée  : %s\n' "${BASE_URL:-aucune (mode fichiers)}" >&2
+  # Jamais d'identifiants dans un journal : on masque la partie « user:secret@ ».
+  printf '  base visée  : %s\n' \
+    "$(printf '%s' "${BASE_URL:-aucune (mode fichiers)}" | sed -E 's#(://[^:/@]*):[^@]*@#\1:***@#')" >&2
   [ -n "$FEATURES_EN_PLUS" ] && printf '  features    : %s\n' "$FEATURES_EN_PLUS" >&2
   return $ok
 }
@@ -326,6 +328,9 @@ etape_tests() {
 # =============================================================================
 etape_recette() {
   export ERP_DONNEES_DIR="$DONNEES_TEST/fichiers"
+  # La recette fonctionnelle valide le **mode fichiers** : même si une base est
+  # configurée pour l'étape 7, on ne la laisse pas s'inviter ici.
+  unset ERP_DATABASE_URL
   rm -rf "$ERP_DONNEES_DIR"
   mkdir -p "$ERP_DONNEES_DIR/exports"
 

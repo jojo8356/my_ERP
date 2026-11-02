@@ -56,8 +56,12 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: erp
-          POSTGRES_PASSWORD: erp
           POSTGRES_DB: erp
+          # Le connecteur « local sans TLS » de Rustorm n'envoie jamais de mot
+          # de passe en clair (SEC-07) : la base de CI accepte les connexions
+          # locales sans authentification, exactement comme un serveur de
+          # développement jetable.
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
         options: >-
@@ -66,7 +70,7 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      ERP_DATABASE_URL: postgres://erp:erp@127.0.0.1:5432/erp
+      ERP_DATABASE_URL: postgres://erp@127.0.0.1:5432/erp
     steps:
       - uses: actions/checkout@v4
       - name: libpq (connecteur PostgreSQL de Rustorm)
