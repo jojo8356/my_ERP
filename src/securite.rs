@@ -410,6 +410,17 @@ fn encoder_uri(s: &str) -> String {
 }
 
 /// Codes de récupération à usage unique (affichés une seule fois).
+/// Code de connexion à 6 chiffres (SEC-03), tiré du même aléa que les secrets.
+///
+/// Il n'est jamais stocké : seul son empreinte (`empreinte_code`) est conservée
+/// par le magasin, avec une échéance, ce qui le rend inutilisable si les
+/// données fuient.
+pub fn nouveau_code_connexion() -> String {
+    let octets = alea_octets(4);
+    let valeur = u32::from_be_bytes([octets[0], octets[1], octets[2], octets[3]]) % 1_000_000;
+    format!("{valeur:06}")
+}
+
 pub fn nouveaux_codes_recuperation(nombre: usize) -> Vec<String> {
     let mut codes = Vec::new();
     for _ in 0..nombre {
@@ -496,6 +507,24 @@ mod tests {
         assert!(codes.iter().all(|c| c.len() == 9 && c.contains('-')));
         assert_eq!(empreinte_code(&codes[0]), empreinte_code(&codes[0].to_uppercase()));
         assert_ne!(empreinte_code(&codes[0]), empreinte_code(&codes[1]));
+    }
+
+    #[test]
+    fn code_de_connexion_a_six_chiffres() {
+        let mut vus = std::collections::HashSet::new();
+        for _ in 0..200 {
+            let code = nouveau_code_connexion();
+            // Toujours 6 chiffres, zéros de tête compris.
+            assert_eq!(code.len(), 6, "{code}");
+            assert!(code.chars().all(|c| c.is_ascii_digit()), "{code}");
+            vus.insert(code);
+        }
+        // L'aléa ne renvoie pas 200 fois le même code.
+        assert!(vus.len() > 150, "seulement {} codes distincts", vus.len());
+        // L'empreinte est stable, insensible à la casse, et ne révèle pas le code.
+        let code = nouveau_code_connexion();
+        assert_eq!(empreinte_code(&code), empreinte_code(&code));
+        assert_ne!(empreinte_code(&code), code);
     }
 
     #[test]

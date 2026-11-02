@@ -395,6 +395,9 @@ pub fn encoder_utilisateur(u: &Utilisateur) -> Resultat<Vec<String>> {
         .t("empreinte", &u.empreinte)
         .t("secret_totp", &u.secret_totp)
         .t("codes_recuperation", u.codes_recuperation.join(","))
+        .t("code_connexion", &u.code_connexion)
+        .n("code_connexion_expire", u.code_connexion_expire)
+        .n("code_connexion_essais", u.code_connexion_essais)
         .b("actif", u.actif)
         .t("cree_le", &u.cree_le)
         .fin()
@@ -415,6 +418,9 @@ pub fn decoder_utilisateur(l: &LigneTable) -> Resultat<Utilisateur> {
             .map(|c| c.trim().to_string())
             .filter(|c| !c.is_empty())
             .collect(),
+        code_connexion: l.texte("code_connexion"),
+        code_connexion_expire: l.entier("code_connexion_expire"),
+        code_connexion_essais: l.entier("code_connexion_essais"),
         actif: l.booleen("actif"),
         cree_le: l.texte("cree_le"),
     })

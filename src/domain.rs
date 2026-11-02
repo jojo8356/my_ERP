@@ -691,7 +691,50 @@ impl TypeClient {
             _ => Self::Professionnel,
         }
     }
+
+    /// Facture obligatoire ? (CDC §11.2)
+    ///
+    /// - professionnel (et association, traitée comme telle) : **toujours** —
+    ///   une facture est due dès la première prestation entre professionnels ;
+    /// - particulier : dès **25 € TTC**, ou sur demande du client (c'est le sens
+    ///   de `sur_demande`, qui correspond à l'option `--sur-demande`).
+    ///
+    /// En dessous du seuil, une simple **note** suffit : l'ERP le dit à la
+    /// création de la pièce mais n'interdit jamais d'établir une facture.
+    pub fn facture_obligatoire(&self, montant_ttc: Cents, sur_demande: bool) -> bool {
+        match self {
+            Self::Particulier => sur_demande || montant_ttc >= SEUIL_FACTURE_PARTICULIER,
+            Self::Professionnel | Self::Association => true,
+        }
+    }
+
+    /// Phrase de conformité affichée quand une facture est créée (CDC §11.2).
+    pub fn note_facturation(&self, montant_ttc: Cents, sur_demande: bool) -> String {
+        if self.facture_obligatoire(montant_ttc, sur_demande) {
+            match (self, sur_demande) {
+                (Self::Particulier, true) => {
+                    "⚖ facture obligatoire : le particulier l'a demandée (CDC §11.2)".to_string()
+                }
+                (Self::Particulier, false) => format!(
+                    "⚖ facture obligatoire : particulier dès {} TTC (montant {} — CDC §11.2)",
+                    format_eur(SEUIL_FACTURE_PARTICULIER),
+                    format_eur(montant_ttc)
+                ),
+                _ => "⚖ facture obligatoire : client professionnel (CDC §11.2)".to_string(),
+            }
+        } else {
+            format!(
+                "⚖ facture facultative : particulier sous {} TTC (montant {}) — une note suffit, \
+                 ajoutez --sur-demande si le client la réclame (CDC §11.2)",
+                format_eur(SEUIL_FACTURE_PARTICULIER),
+                format_eur(montant_ttc)
+            )
+        }
+    }
 }
+
+/// Seuil au-delà duquel un particulier doit recevoir une facture (CDC §11.2).
+pub const SEUIL_FACTURE_PARTICULIER: Cents = 2_500;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Client {
@@ -1552,6 +1595,29 @@ mod tests {
         assert!(correspond("Atelier Dupont", "dupont atelier"));
         assert!(correspond("Atelier Dupont", ""));
         assert!(!correspond("Atelier Dupont", "martin"));
+    }
+
+    #[test]
+    fn facture_obligatoire_selon_le_type_et_le_seuil() {
+        // Professionnel : facture due dès le premier euro (CDC §11.2).
+        assert!(TypeClient::Professionnel.facture_obligatoire(0, false));
+        assert!(TypeClient::Professionnel.facture_obligatoire(1_000, false));
+        assert!(TypeClient::Association.facture_obligatoire(100, false));
+        // Particulier : sous 25 € TTC, une note suffit…
+        assert!(!TypeClient::Particulier.facture_obligatoire(2_499, false));
+        // …sauf si le client la demande…
+        assert!(TypeClient::Particulier.facture_obligatoire(2_499, true));
+        // …et dès le seuil de 25 €, sans demande.
+        assert!(TypeClient::Particulier.facture_obligatoire(2_500, false));
+        assert!(TypeClient::Particulier.facture_obligatoire(120_000, false));
+        // Le message explique toujours la règle appliquée.
+        let note = TypeClient::Particulier.note_facturation(1_000, false);
+        assert!(note.contains("facultative"), "{note}");
+        assert!(note.contains("25,00 €"), "{note}");
+        let note = TypeClient::Particulier.note_facturation(5_000, false);
+        assert!(note.contains("obligatoire"), "{note}");
+        let note = TypeClient::Professionnel.note_facturation(1_000, false);
+        assert!(note.contains("professionnel"), "{note}");
     }
 
     #[test]

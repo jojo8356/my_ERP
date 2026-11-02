@@ -169,14 +169,21 @@ impl Bdd {
     /// Sans effet si la base est déjà à jour : la fonction est rejouable, ce qui
     /// permet de l'appeler à chaque ouverture (`ERP_DATABASE_URL`).
     pub fn migrer(&mut self) -> Resultat<bool> {
-        if self.est_migree()? {
-            return Ok(false);
+        let mut cree = false;
+        if !self.est_migree()? {
+            let ddl = orm::ddl_postgres()?;
+            self.conn
+                .execute_raw(&ddl)
+                .map_err(|e| erreur("migration", e))?;
+            cree = true;
         }
-        let ddl = orm::ddl_postgres()?;
+        // Les colonnes ajoutées au modèle depuis la création de la base sont
+        // rattrapées ici : la migration reste additive et rejouable (ADR-009).
+        let ajouts = orm::alter_postgres()?;
         self.conn
-            .execute_raw(&ddl)
-            .map_err(|e| erreur("migration", e))?;
-        Ok(true)
+            .execute_raw(&ajouts)
+            .map_err(|e| erreur("migration (colonnes ajoutées)", e))?;
+        Ok(cree)
     }
 
     /// Tables réellement présentes, dans l'ordre du modèle.
@@ -538,6 +545,55 @@ mod integration {
         assert!(audit.contains("intègre") || audit.contains("aucune altération"), "{audit}");
         let balance = lancer(&mut app, "/compta balance");
         assert!(balance.contains("411000") || balance.contains("Clients"), "{balance}");
+    }
+
+    #[test]
+    #[ignore = "nécessite une base jetable (ERP_DATABASE_URL)"]
+    fn le_code_de_connexion_est_persiste_dans_la_base() {
+        // Le code envoyé par e-mail doit survivre au processus : il est stocké
+        // (sous forme d'empreinte) dans la colonne dédiée du compte.
+        let url = url();
+        let code = {
+            let mut app = App::ouvrir_bdd(&url).expect("connexion");
+            app.store.vider_bdd().expect("vidage");
+            lancer(
+                &mut app,
+                "/utilisateurs nouveau jojo --role admin --mot-de-passe \"Correct-Horse-2026!\" \
+                 --email jojo@exemple.fr",
+            );
+            let texte = lancer(&mut app, "/utilisateurs code jojo");
+            assert!(texte.contains("envoyé à j***@exemple.fr"), "{texte}");
+            // Le code est dans la boîte d'envoi locale (répertoire courant).
+            let courriels = std::path::Path::new("courriels");
+            let mut messages: Vec<_> = std::fs::read_dir(courriels)
+                .expect("boîte d'envoi")
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .collect();
+            messages.sort();
+            let contenu = std::fs::read_to_string(messages.last().expect("un message"))
+                .expect("message lisible");
+            contenu
+                .lines()
+                .find(|l| l.contains("Voici votre code de connexion"))
+                .and_then(|l| l.rsplit(" : ").next())
+                .expect("code dans le message")
+                .trim()
+                .to_string()
+        };
+        // Nouvelle connexion : le code vient de la base, pas de la mémoire.
+        let mut app = App::ouvrir_bdd(&url).expect("seconde connexion");
+        let texte = lancer(
+            &mut app,
+            &format!("/auth connexion jojo --mot-de-passe \"Correct-Horse-2026!\" --code {code}"),
+        );
+        assert!(texte.contains("Connecté en tant que jojo"), "{texte}");
+        lancer(&mut app, "/auth deconnexion");
+        let texte = lancer(
+            &mut app,
+            &format!("/auth connexion jojo --mot-de-passe \"Correct-Horse-2026!\" --code {code}"),
+        );
+        assert!(texte.contains("ERREUR"), "usage unique : {texte}");
+        let _ = std::fs::remove_dir_all("courriels");
     }
 
     #[test]

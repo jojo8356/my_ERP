@@ -170,6 +170,34 @@ pub fn courriel_relance(
     )
 }
 
+/// Code de connexion à usage unique (SEC-03) — envoyé par e-mail, 15 minutes.
+///
+/// Le message ne contient **que** le code et sa durée de vie : pas de lien, pas
+/// de pièce jointe, rien qui puisse être rejoué après expiration.
+pub fn courriel_code_connexion(
+    societe: &Societe,
+    utilisateur_nom: &str,
+    destinataire: &str,
+    code: &str,
+    validite_minutes: i64,
+) -> Courriel {
+    let corps = format!(
+        "Bonjour,\n\nVoici votre code de connexion à l'ERP de {} : {code}\n\n\
+         Ce code est valable {validite_minutes} minutes et ne peut être utilisé qu'une fois.\n\
+         Il remplace le code de l'application d'authentification pour cette connexion :\n\
+         /auth connexion {utilisateur_nom} --mot-de-passe … --code {code}\n\n\
+         Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : \
+         aucun code ne sera utilisable sans lui.\n",
+        societe.nom
+    );
+    Courriel::nouveau(
+        &societe.email,
+        destinataire,
+        &format!("Code de connexion ERP — {utilisateur_nom}"),
+        corps,
+    )
+}
+
 // ------------------------------------------------------------ Sérialisation MIME
 
 fn base64(octets: &[u8]) -> String {
@@ -376,6 +404,29 @@ mod tests {
         let courriel = Courriel::nouveau("a@b.fr\r\nBcc: pirate@x.fr", "c@d.fr", "Test", "corps".into());
         let message = enveloppe(&courriel);
         assert!(!message.contains("\r\nBcc:"));
+    }
+
+    #[test]
+    fn courriel_de_code_de_connexion() {
+        let courriel = courriel_code_connexion(
+            &societe(),
+            "jojo",
+            "jojo@exemple.fr",
+            "042731",
+            15,
+        );
+        assert_eq!(courriel.destinataire, "jojo@exemple.fr");
+        assert!(courriel.pieces.is_empty(), "aucune pièce jointe");
+        assert!(courriel.sujet.contains("Code de connexion"), "{}", courriel.sujet);
+        assert!(courriel.corps.contains("042731"));
+        assert!(courriel.corps.contains("15 minutes"));
+        assert!(courriel.corps.contains("une fois"));
+        // Le message est complet et relisible tel quel (RFC 5322).
+        let message = enveloppe(&courriel);
+        assert!(message.contains("To: jojo@exemple.fr"));
+        assert!(message.contains("Content-Type: text/plain"));
+        assert!(message.contains("042731"));
+        assert!(!message.contains("application/pdf"));
     }
 
     #[test]

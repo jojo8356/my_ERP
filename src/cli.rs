@@ -102,6 +102,19 @@ fn ecrire(sortie: &mut dyn Write, texte: impl std::fmt::Display) -> Resultat<()>
     writeln!(sortie, "{texte}").map_err(|e| e.to_string())
 }
 
+/// Masque une adresse e-mail pour l'affichage : `jojo@exemple.fr` → `j***@exemple.fr`.
+/// L'utilisateur reconnaît sa boîte sans exposer l'adresse complète en clair
+/// dans les journaux ou une sortie partagée (SEC-06).
+fn masquer_courriel(adresse: &str) -> String {
+    match adresse.split_once('@') {
+        Some((locale, domaine)) if !locale.is_empty() => {
+            let initiale = locale.chars().next().unwrap_or('*');
+            format!("{initiale}***@{domaine}")
+        }
+        _ => adresse.to_string(),
+    }
+}
+
 fn json_echapper(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -262,6 +275,7 @@ fn aide_contexte(chemin: &[String]) -> &'static str {
 /clients importer <fichier.csv> | exporter <fichier.csv>",
         Some("factures") => "\
 /factures                    liste (--impayees, --retard, --statut, --csv, --json)
+/factures nouvelle            --client … --ligne … [--sur-demande]   (facture due : CDC §11.2)
 /factures nouvelle --client <nom> --ligne \"désignation;qté;prix HT[;tva bp]\"
 /factures <numéro>            détail (FA-2026-0001 ou /factures/2026/0001)
 /factures <numéro> valider | envoyer | payer | relance | avoir | annuler
@@ -300,11 +314,13 @@ fn aide_contexte(chemin: &[String]) -> &'static str {
 /devises taux <DEVISE> <AAAA-MM-JJ> <1 devise = x EUR>
 /devises convertir <montant> <DEVISE> [AAAA-MM-JJ]",
         Some("utilisateurs") | Some("auth") => "\
-/auth connexion <compte> --mot-de-passe … [--totp 123456]
+/auth connexion <compte> --mot-de-passe … [--totp 123456 | --code 123456]
 /auth statut | deconnexion
 /utilisateurs                liste des comptes
 /utilisateurs nouveau <compte> --role admin|utilisateur --mot-de-passe … [--email …]
 /utilisateurs 2fa <compte>   active la double authentification (secret + codes)
+/utilisateurs code <compte>  envoie un code de connexion à usage unique par e-mail
+/utilisateurs email <compte> --email …   adresse de réception du code
 /utilisateurs mot-de-passe <compte> --nouveau …",
         Some("admin") => "\
 /admin sante                 fichiers, lignes, sauvegarde, chaîne d'audit
@@ -1257,7 +1273,31 @@ impl App {
                 pluriel_document(type_doc),
                 document.numero
             )),
-        )
+        )?;
+        // CDC §11.2 : la facture n'est pas due dans tous les cas. On le dit au
+        // moment où la pièce est créée, sans jamais l'interdire.
+        if type_doc == TypeDocument::Facture {
+            self.rappeler_obligation_facture(&client, &document, options, sortie)?;
+        }
+        Ok(())
+    }
+
+    /// Rappelle si une facture est obligatoire pour ce client et ce montant
+    /// (CDC §11.2) : professionnel toujours, particulier dès 25 € TTC ou sur
+    /// demande (`--sur-demande`).
+    fn rappeler_obligation_facture(
+        &self,
+        client: &Client,
+        document: &Document,
+        options: &Options,
+        sortie: &mut dyn Write,
+    ) -> Resultat<()> {
+        let regime = self.store.societe_regime_public();
+        let ttc = document.totaux(regime).ttc;
+        let note = client
+            .type_client
+            .note_facturation(ttc, drapeau(options, "sur-demande"));
+        ecrire(sortie, theme::info(format!("  {note}")))
     }
 
     fn action_document(
@@ -1422,7 +1462,10 @@ impl App {
                         "✓ Devis {numero} transformé en facture {} (brouillon)",
                         facture.numero
                     )),
-                )
+                )?;
+                // Une facture naît de la transformation : même rappel §11.2.
+                let client = self.store.client_par_id(facture.client_id)?;
+                self.rappeler_obligation_facture(&client, &facture, options, sortie)
             }
             "modifier" | "edit" => Err(format!(
                 "{} ne se modifie pas : un document validé est immuable (EF-FAC-02). Créez un avoir : \
@@ -2615,12 +2658,39 @@ impl App {
                     return Err("mot de passe invalide".into());
                 }
                 if utilisateur.role.est_admin() || utilisateur.deux_facteurs_actif() {
+                    // Deux seconds facteurs possibles (SEC-02 / SEC-03) : le code
+                    // TOTP de l'application, ou le code envoyé par e-mail.
+                    if let Some(code) = opt(options, "code") {
+                        if let Err(e) = self.store.verifier_code_connexion(nom, code) {
+                            self.store.journaliser(
+                                "auth.echec",
+                                &format!("compte {nom} : code e-mail refusé ({e})"),
+                            )?;
+                            return Err(e);
+                        }
+                        self.store.journaliser(
+                            "auth.code-utilise",
+                            &format!("compte {nom} : code e-mail validé"),
+                        )?;
+                        self.store.etablir_session(&utilisateur.nom_utilisateur)?;
+                        self.store
+                            .journaliser("auth.connexion", &utilisateur.nom_utilisateur)?;
+                        return ecrire(
+                            sortie,
+                            theme::succes(format!(
+                                "✓ Connecté en tant que {} ({}) — code reçu par e-mail",
+                                utilisateur.nom_utilisateur,
+                                utilisateur.role.libelle()
+                            )),
+                        );
+                    }
                     let code = match opt(options, "totp") {
                         Some(code) => code.to_string(),
                         None => {
                             return Err(
                                 "double authentification requise : ajoutez --totp <code à 6 chiffres> \
-                                 (SEC-02 : obligatoire pour les administrateurs)"
+                                 ou --code <code reçu par e-mail> (SEC-02 : obligatoire pour les \
+                                 administrateurs)"
                                     .into(),
                             )
                         }
@@ -2704,6 +2774,62 @@ impl App {
                     ));
                 }
                 ecrire(sortie, theme::succes(texte))
+            }
+            Some("code") => {
+                // Envoi du code de connexion par e-mail (SEC-03). Le code
+                // n'apparaît jamais à l'écran : il part dans la boîte d'envoi.
+                let nom = rest
+                    .get(1)
+                    .ok_or("usage : /utilisateurs code <compte>")?;
+                let code = self.store.ouvrir_code_connexion(nom)?;
+                let utilisateur = self
+                    .store
+                    .utilisateur(nom)
+                    .ok_or_else(|| format!("compte inconnu : « {nom} »"))?;
+                let societe = self.store.societe()?;
+                let courriel = messagerie::courriel_code_connexion(
+                    &societe,
+                    &utilisateur.nom_utilisateur,
+                    &utilisateur.email,
+                    &code,
+                    crate::store::Utilisateur::CODE_CONNEXION_VALIDITE / 60,
+                );
+                let chemin = self.courrier(&courriel)?;
+                self.store
+                    .journaliser("auth.code-envoye", &format!("compte {nom}"))?;
+                ecrire(
+                    sortie,
+                    theme::succes(format!(
+                        "✓ Code de connexion envoyé à {} — valable {} minutes, à usage unique",
+                        masquer_courriel(&utilisateur.email),
+                        crate::store::Utilisateur::CODE_CONNEXION_VALIDITE / 60
+                    )),
+                )?;
+                ecrire(
+                    sortie,
+                    format!(
+                        "  message : {}\n  connexion : /auth connexion {} --mot-de-passe … --code <reçu par e-mail>",
+                        chemin.display(),
+                        utilisateur.nom_utilisateur
+                    ),
+                )
+            }
+            Some("email") => {
+                let nom = rest
+                    .get(1)
+                    .ok_or("usage : /utilisateurs email <compte> --email vous@exemple.fr")?;
+                let email = opt(options, "email")
+                    .ok_or("précisez --email vous@exemple.fr (champ vide pour effacer)")?;
+                let utilisateur = self.store.maj_email_utilisateur(nom, email)?;
+                self.store.journaliser("utilisateur.email", nom)?;
+                ecrire(
+                    sortie,
+                    theme::succes(format!(
+                        "✓ Adresse e-mail de {} : {}",
+                        utilisateur.nom_utilisateur,
+                        utilisateur.email
+                    )),
+                )
             }
             Some("2fa") => {
                 let nom = rest
@@ -3428,6 +3554,145 @@ mod tests {
         let contenu = std::fs::read_to_string(&xml).unwrap();
         assert!(contenu.contains("<Invoice"));
         let _ = std::fs::remove_dir_all(&dossier);
+    }
+
+    /// Extrait le code à 6 chiffres du message écrit dans la boîte d'envoi :
+    /// c'est exactement ce que le destinataire lit dans son e-mail.
+    fn code_du_dernier_courriel(dossier: &Path) -> String {
+        let boite = dossier.join("courriels");
+        let mut fichiers: Vec<_> = std::fs::read_dir(&boite)
+            .expect("boîte d'envoi")
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .collect();
+        fichiers.sort();
+        let contenu = std::fs::read_to_string(fichiers.last().expect("au moins un message"))
+            .expect("message lisible");
+        let ligne = contenu
+            .lines()
+            .find(|l| l.contains("Voici votre code de connexion"))
+            .unwrap_or_else(|| panic!("message inattendu : {contenu}"));
+        ligne
+            .rsplit(" : ")
+            .next()
+            .unwrap()
+            .trim()
+            .to_string()
+    }
+
+    #[test]
+    fn code_de_connexion_par_email_puis_connexion() {
+        let dossier = std::env::temp_dir().join(format!("erp-code-cli-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dossier);
+        std::fs::create_dir_all(&dossier).unwrap();
+        let mut app = App::ouvrir(&dossier).unwrap();
+        let texte = lancer(
+            &mut app,
+            "/utilisateurs nouveau jojo --role admin --mot-de-passe \"Correct-Horse-2026!\" \
+             --email jojo@exemple.fr",
+        );
+        assert!(texte.contains("2fa"), "{texte}");
+        // Envoi du code : il ne doit jamais apparaître dans la sortie.
+        let texte = lancer(&mut app, "/utilisateurs code jojo");
+        assert!(texte.contains("envoyé à j***@exemple.fr"), "{texte}");
+        assert!(texte.contains("15 minutes"), "{texte}");
+        let code = code_du_dernier_courriel(&dossier);
+        assert_eq!(code.len(), 6, "code lu dans le courriel : {code}");
+        assert!(code.chars().all(|c| c.is_ascii_digit()), "{code}");
+        assert!(!texte.contains(&code), "le code ne doit pas s'afficher : {texte}");
+
+        // Mauvais code : refus explicite, aucune session ouverte.
+        let mauvais = if code == "000000" { "000001" } else { "000000" };
+        let texte = lancer(
+            &mut app,
+            &format!(
+                "/auth connexion jojo --mot-de-passe \"Correct-Horse-2026!\" --code {mauvais}"
+            ),
+        );
+        assert!(texte.contains("ERREUR"), "{texte}");
+        assert_eq!(app.store.session(), "local");
+
+        // Bon code : connexion, puis code consommé (usage unique).
+        let texte = lancer(
+            &mut app,
+            &format!("/auth connexion jojo --mot-de-passe \"Correct-Horse-2026!\" --code {code}"),
+        );
+        assert!(texte.contains("Connecté en tant que jojo"), "{texte}");
+        assert!(texte.contains("code reçu par e-mail"), "{texte}");
+        assert_eq!(app.store.session(), "jojo");
+        lancer(&mut app, "/auth deconnexion");
+        let texte = lancer(
+            &mut app,
+            &format!("/auth connexion jojo --mot-de-passe \"Correct-Horse-2026!\" --code {code}"),
+        );
+        assert!(texte.contains("ERREUR"), "le code ne doit servir qu'une fois : {texte}");
+        // Le journal garde la trace de l'envoi et de l'utilisation.
+        let audit = lancer(&mut app, "/admin audit");
+        assert!(audit.contains("auth.code-envoye"), "{audit}");
+        assert!(audit.contains("auth.code-utilise"), "{audit}");
+        let _ = std::fs::remove_dir_all(&dossier);
+    }
+
+    #[test]
+    fn code_de_connexion_refuse_sans_email() {
+        let dossier = std::env::temp_dir().join(format!("erp-code-mail-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dossier);
+        std::fs::create_dir_all(&dossier).unwrap();
+        let mut app = App::ouvrir(&dossier).unwrap();
+        lancer(
+            &mut app,
+            "/utilisateurs nouveau jojo --role admin --mot-de-passe \"Correct-Horse-2026!\"",
+        );
+        let texte = lancer(&mut app, "/utilisateurs code jojo");
+        assert!(texte.contains("adresse e-mail"), "{texte}");
+        // La commande pour la renseigner est proposée dans le message.
+        let texte = lancer(&mut app, "/utilisateurs email jojo --email jojo@exemple.fr");
+        assert!(texte.contains("jojo@exemple.fr"), "{texte}");
+        let texte = lancer(&mut app, "/utilisateurs code jojo");
+        assert!(texte.contains("envoyé à j***@exemple.fr"), "{texte}");
+        assert!(dossier.join("courriels").is_dir(), "message écrit dans la boîte");
+        let _ = std::fs::remove_dir_all(&dossier);
+    }
+
+    #[test]
+    fn facture_obligatoire_annoncee_dans_le_cli() {
+        let mut app = app();
+        lancer(&mut app, "/societe modifier --siren 123456789 --adresse \"1 rue\" --ville Nice");
+        lancer(&mut app, "/clients nouveau --nom \"Martin\" --type particulier");
+        lancer(&mut app, "/clients nouveau --nom \"Atelier Dupont\" --type pro");
+        // Particulier sous 25 € TTC : une note suffit, l'ERP le rappelle.
+        let texte = lancer(
+            &mut app,
+            "/factures nouvelle --client martin --ligne \"Dépannage;1;10,00\"",
+        );
+        assert!(texte.contains("facultative"), "{texte}");
+        assert!(texte.contains("25,00 €"), "{texte}");
+        // Au-dessus du seuil : facture obligatoire.
+        let texte = lancer(
+            &mut app,
+            "/factures nouvelle --client martin --ligne \"Dépannage;1;40,00\"",
+        );
+        assert!(texte.contains("facture obligatoire"), "{texte}");
+        // Sous le seuil mais réclamée par le client.
+        let texte = lancer(
+            &mut app,
+            "/factures nouvelle --client martin --ligne \"Dépannage;1;5,00\" --sur-demande",
+        );
+        assert!(texte.contains("demandée"), "{texte}");
+        // Professionnel : toujours obligatoire, même à 1 €.
+        let texte = lancer(
+            &mut app,
+            "/factures nouvelle --client dupont --ligne \"Audit;1;1,00\"",
+        );
+        assert!(texte.contains("professionnel"), "{texte}");
+        // Un devis transformé en facture rappelle la même règle.
+        lancer(&mut app, "/devis nouvelle --client martin --ligne \"Étude;1;12,00\"");
+        let numero = app
+            .store
+            .documents(Some(TypeDocument::Devis))[0]
+            .numero
+            .clone();
+        let texte = lancer(&mut app, &format!("/devis {numero} transformer"));
+        assert!(texte.contains("facultative"), "{texte}");
     }
 
     #[test]

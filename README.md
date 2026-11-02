@@ -32,7 +32,7 @@ Zéro GUI, **aucune base de données**. Couleurs : [Chromat](https://github.com/
 (bibliothèque de l’auteur, ADR-004) pilote le CLI via `src/theme.rs` ; la TUI
 utilise **Ratatui + Crossterm** (ADR-005) avec la même palette et des
 **formulaires** pour chaque création/action. Le modèle de données est un schéma
-[**Rustorm**](https://github.com/jojo8356/rustorm) (`rustorm/schema.rsm`, 15 tables)
+[**Rustorm**](https://github.com/jojo8356/rustorm) (`rustorm/schema.rsm`, 16 tables)
 validé **et compilé à chaque build** : le client typé, les colonnes des fichiers
 de données et la future migration PostgreSQL viennent tous du même fichier
 (ADR-006). Aucune connexion n’est ouverte : le stockage local est un moteur
@@ -43,7 +43,8 @@ Navigation par **chemins type URL** et raccourcis, comme exigé dans le
 conforme + e-facture UBL/EN 16931, envoi e-mail (RFC 5322), relances graduées,
 comptabilité (écritures, TVA, FEC, balance, rapprochement bancaire), seuils
 micro-entreprise, achat-revente Vinted (marges, rotation, alerte DAC7),
-multi-sociétés, multi-devises, utilisateurs/rôles/2FA et journal d’audit chaîné.
+multi-sociétés, multi-devises, utilisateurs/rôles/2FA (application TOTP **ou**
+code à usage unique envoyé par e-mail), et journal d’audit chaîné.
 Le détail exigence par exigence est dans **[CONFORMITE-CDC.md](CONFORMITE-CDC.md)**.
 
 ```bash
@@ -55,7 +56,8 @@ cargo build --release            # binaire unique : target/release/my-erp
 ./target/release/my-erp /factures FA-2026-0001 pdf facture.pdf
 ./target/release/my-erp /compta fec > fec.csv              # FEC DGFiP
 ./target/release/my-erp /admin schema --sql                # migration PostgreSQL prête
-bash scripts/scenario-demo.sh    # recette complète commentée (15 étapes)
+./target/release/my-erp /utilisateurs code admin           # 2e facteur par e-mail (SEC-03)
+bash scripts/scenario-demo.sh    # recette complète commentée (16 étapes)
 ```
 
 Sorties machine : `--json` et `--csv` sur toutes les listes, pagination
@@ -75,6 +77,29 @@ Dossier modifiable via `ERP_DONNEES_DIR` ou `--donnees <dossier>` ; `--memoire`
 = démonstration sans écriture disque. L’ancien `etat.tsv` de la v1 est importé
 automatiquement au premier démarrage (ENF-PORT-01). Sauvegarde = `/admin
 sauvegarde` (ou copie du dossier) ; restauration = `/admin restaurer <nom>`.
+
+### Deux règles de conformité appliquées, pas seulement documentées
+
+- **Facture obligatoire ou non (CDC §11.2)** — `TypeClient::facture_obligatoire` :
+  professionnel, toujours ; particulier, dès **25 € TTC** ou sur demande. La règle
+  est rappelée à chaque création de facture (et à la transformation d’un devis) ;
+  sous le seuil, l’ERP signale qu’une note suffit, sans jamais l’interdire :
+
+  ```bash
+  ./target/release/my-erp /factures nouvelle --client martin --ligne "Dépannage;1;10,00"
+  #   ⚖ facture facultative : particulier sous 25,00 € TTC (montant 10,00 €) — une note
+  #     suffit, ajoutez --sur-demande si le client la réclame (CDC §11.2)
+  ```
+
+- **Code de connexion par e-mail (SEC-03)** — en plus du TOTP, un **code à usage
+  unique** peut être envoyé au compte ; seule son empreinte est stockée (15 min,
+  5 tentatives), et le code ne s’affiche jamais à l’écran :
+
+  ```bash
+  ./target/release/my-erp /utilisateurs email admin --email moi@exemple.fr
+  ./target/release/my-erp /utilisateurs code admin      # → données/courriels/*.eml
+  ./target/release/my-erp /auth connexion admin --mot-de-passe … --code 123456
+  ```
 
 ### Base de données PostgreSQL (optionnelle, par Rustorm)
 

@@ -67,6 +67,12 @@ pub struct Utilisateur {
     pub empreinte: String,
     pub secret_totp: String,
     pub codes_recuperation: Vec<String>,
+    /// Empreinte du code de connexion envoyé par e-mail (SEC-03) ; vide = aucun.
+    pub code_connexion: String,
+    /// Expiration du code en cours (secondes epoch) ; 0 = aucun code.
+    pub code_connexion_expire: i64,
+    /// Tentatives erronées sur le code en cours (remis à 0 à chaque envoi).
+    pub code_connexion_essais: i64,
     pub actif: bool,
     pub cree_le: String,
 }
@@ -82,6 +88,9 @@ impl Utilisateur {
             empreinte: String::new(),
             secret_totp: String::new(),
             codes_recuperation: Vec::new(),
+            code_connexion: String::new(),
+            code_connexion_expire: 0,
+            code_connexion_essais: 0,
             actif: true,
             cree_le: aujourdhui(),
         }
@@ -89,6 +98,17 @@ impl Utilisateur {
     /// SEC-02 : la double authentification est obligatoire pour les admins.
     pub fn deux_facteurs_actif(&self) -> bool {
         !self.secret_totp.trim().is_empty()
+    }
+
+    /// Durée de vie du code de connexion envoyé par e-mail (SEC-03), en secondes.
+    pub const CODE_CONNEXION_VALIDITE: i64 = 900;
+
+    /// Nombre d'essais erronés avant que le code ne soit invalidé.
+    pub const CODE_CONNEXION_ESSAIS_MAX: i64 = 5;
+
+    /// Un code de connexion est-il encore utilisable à cet instant ?
+    pub fn code_connexion_en_attente(&self, maintenant: i64) -> bool {
+        !self.code_connexion.is_empty() && self.code_connexion_expire > maintenant
     }
 }
 
@@ -931,6 +951,96 @@ impl Store {
         self.utilisateurs.push(utilisateur.clone());
         self.persister()?;
         Ok(utilisateur)
+    }
+
+    /// Renomme l'adresse e-mail d'un compte (nécessaire au code de connexion).
+    pub fn maj_email_utilisateur(&mut self, nom: &str, email: &str) -> Resultat<Utilisateur> {
+        let email = email.trim();
+        if !email.is_empty() && !email.contains('@') {
+            return Err(format!("adresse e-mail invalide : « {email} »"));
+        }
+        let mut utilisateur = self
+            .utilisateur(nom)
+            .ok_or_else(|| format!("compte inconnu : « {nom} »"))?;
+        utilisateur.email = email.to_string();
+        self.maj_utilisateur(utilisateur.clone())?;
+        Ok(utilisateur)
+    }
+
+    /// Prépare un code de connexion à usage unique et renvoie le code **en
+    /// clair** : il part dans l'e-mail, jamais dans la sortie du CLI (SEC-03).
+    /// Seule son empreinte est conservée, avec une échéance de 15 minutes.
+    pub fn ouvrir_code_connexion(&mut self, nom: &str) -> Resultat<String> {
+        let mut utilisateur = self
+            .utilisateur(nom)
+            .ok_or_else(|| format!("compte inconnu : « {nom} »"))?;
+        if utilisateur.email.trim().is_empty() {
+            return Err(format!(
+                "le compte « {nom} » n'a pas d'adresse e-mail — renseignez-la d'abord : \
+                 /utilisateurs email {nom} --email vous@exemple.fr"
+            ));
+        }
+        let code = crate::securite::nouveau_code_connexion();
+        utilisateur.code_connexion = crate::securite::empreinte_code(&code);
+        utilisateur.code_connexion_expire =
+            crate::securite::maintenant_secondes() as i64 + Utilisateur::CODE_CONNEXION_VALIDITE;
+        utilisateur.code_connexion_essais = 0;
+        self.maj_utilisateur(utilisateur)?;
+        Ok(code)
+    }
+
+    /// Vérifie puis **consomme** le code de connexion envoyé par e-mail.
+    ///
+    /// Le code est à usage unique : il est effacé dès qu'il est accepté, et
+    /// invalidé après `CODE_CONNEXION_ESSAIS_MAX` tentatives erronées ou à
+    /// l'expiration (SEC-03).
+    pub fn verifier_code_connexion(&mut self, nom: &str, code: &str) -> Resultat<()> {
+        let mut utilisateur = self
+            .utilisateur(nom)
+            .ok_or_else(|| format!("compte inconnu : « {nom} »"))?;
+        let maintenant = crate::securite::maintenant_secondes() as i64;
+        if utilisateur.code_connexion.is_empty() {
+            return Err(
+                "aucun code de connexion en attente — demandez-en un : /utilisateurs code <compte>"
+                    .into(),
+            );
+        }
+        if utilisateur.code_connexion_expire <= maintenant {
+            utilisateur.code_connexion.clear();
+            utilisateur.code_connexion_expire = 0;
+            utilisateur.code_connexion_essais = 0;
+            self.maj_utilisateur(utilisateur)?;
+            return Err("code de connexion expiré — demandez-en un nouveau".into());
+        }
+        if utilisateur.code_connexion_essais >= Utilisateur::CODE_CONNEXION_ESSAIS_MAX {
+            utilisateur.code_connexion.clear();
+            utilisateur.code_connexion_expire = 0;
+            utilisateur.code_connexion_essais = 0;
+            self.maj_utilisateur(utilisateur)?;
+            return Err(format!(
+                "trop de tentatives : code invalidé — demandez-en un nouveau \
+                 (/utilisateurs code {nom})"
+            ));
+        }
+        let empreinte = crate::securite::empreinte_code(code.trim());
+        if !crate::securite::egalite_constante(
+            empreinte.as_bytes(),
+            utilisateur.code_connexion.as_bytes(),
+        ) {
+            utilisateur.code_connexion_essais += 1;
+            let restants =
+                Utilisateur::CODE_CONNEXION_ESSAIS_MAX - utilisateur.code_connexion_essais;
+            self.maj_utilisateur(utilisateur)?;
+            return Err(format!(
+                "code de connexion invalide ({restants} tentative(s) restante(s))"
+            ));
+        }
+        // Code accepté : il ne resservira jamais.
+        utilisateur.code_connexion.clear();
+        utilisateur.code_connexion_expire = 0;
+        utilisateur.code_connexion_essais = 0;
+        self.maj_utilisateur(utilisateur)?;
+        Ok(())
     }
 
     pub fn maj_utilisateur(&mut self, utilisateur: Utilisateur) -> Resultat<()> {
@@ -2842,6 +2952,86 @@ mod tests {
         assert!(s.exiger_admin().is_err());
         s.fermer_session().unwrap();
         assert_eq!(s.session(), "local");
+    }
+
+    #[test]
+    fn code_de_connexion_survit_a_la_reouverture() {
+        // Le code doit fonctionner d'un processus à l'autre : c'est tout l'intérêt
+        // d'un code envoyé par e-mail (SEC-03). Seule son empreinte est stockée.
+        let dossier = std::env::temp_dir().join(format!("erp-code-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dossier);
+        let code = {
+            let mut s = Store::ouvrir(&dossier).unwrap();
+            let mut admin = Utilisateur::nouveau("jojo", Role::Admin);
+            admin.email = "jojo@exemple.fr".into();
+            s.creer_utilisateur(admin).unwrap();
+            s.ouvrir_code_connexion("jojo").unwrap()
+        };
+        assert_eq!(code.len(), 6);
+        let mut s = Store::ouvrir(&dossier).unwrap();
+        let utilisateur = s.utilisateur("jojo").unwrap();
+        assert_ne!(utilisateur.code_connexion, code, "le code n'est pas stocké en clair");
+        assert!(utilisateur.code_connexion_en_attente(crate::securite::maintenant_secondes() as i64));
+        s.verifier_code_connexion("jojo", &code).unwrap();
+        // Usage unique : le même code ne repasse pas.
+        let erreur = s.verifier_code_connexion("jojo", &code).unwrap_err();
+        assert!(erreur.contains("aucun code"), "{erreur}");
+        assert!(s.utilisateur("jojo").unwrap().code_connexion.is_empty());
+        let _ = std::fs::remove_dir_all(&dossier);
+    }
+
+    #[test]
+    fn code_de_connexion_invalide_puis_invalide_apres_trop_d_essais() {
+        let mut s = Store::memoire();
+        let mut admin = Utilisateur::nouveau("jojo", Role::Admin);
+        admin.email = "jojo@exemple.fr".into();
+        s.creer_utilisateur(admin).unwrap();
+        let code = s.ouvrir_code_connexion("jojo").unwrap();
+        let mauvais = if code == "000000" { "000001" } else { "000000" };
+        for essai in 1..=Utilisateur::CODE_CONNEXION_ESSAIS_MAX {
+            let erreur = s.verifier_code_connexion("jojo", mauvais).unwrap_err();
+            let restants = Utilisateur::CODE_CONNEXION_ESSAIS_MAX - essai;
+            assert!(erreur.contains(&format!("{restants} tentative")), "{erreur}");
+        }
+        // Après le plafond, même le bon code est refusé (SEC-03).
+        let erreur = s.verifier_code_connexion("jojo", &code).unwrap_err();
+        assert!(erreur.contains("trop de tentatives"), "{erreur}");
+        // Un nouvel envoi remet le compteur à zéro et fournit un nouveau code.
+        let nouveau = s.ouvrir_code_connexion("jojo").unwrap();
+        s.verifier_code_connexion("jojo", &nouveau).unwrap();
+    }
+
+    #[test]
+    fn code_de_connexion_expire_et_exige_un_email() {
+        let mut s = Store::memoire();
+        let mut admin = Utilisateur::nouveau("jojo", Role::Admin);
+        s.creer_utilisateur(admin.clone()).unwrap();
+        // Sans adresse e-mail, aucun envoi possible : le message dit quoi faire.
+        let erreur = s.ouvrir_code_connexion("jojo").unwrap_err();
+        assert!(erreur.contains("adresse e-mail"), "{erreur}");
+        admin.email = "jojo@exemple.fr".into();
+        s.maj_utilisateur(admin).unwrap();
+        let code = s.ouvrir_code_connexion("jojo").unwrap();
+        // On force l'échéance dans le passé : le code est refusé et purgé.
+        let mut utilisateur = s.utilisateur("jojo").unwrap();
+        utilisateur.code_connexion_expire = 1;
+        s.maj_utilisateur(utilisateur).unwrap();
+        let erreur = s.verifier_code_connexion("jojo", &code).unwrap_err();
+        assert!(erreur.contains("expiré"), "{erreur}");
+        let utilisateur = s.utilisateur("jojo").unwrap();
+        assert!(utilisateur.code_connexion.is_empty());
+        assert_eq!(utilisateur.code_connexion_expire, 0);
+    }
+
+    #[test]
+    fn email_modifie_avec_validation() {
+        let mut s = Store::memoire();
+        s.creer_utilisateur(Utilisateur::nouveau("jojo", Role::Admin))
+            .unwrap();
+        assert!(s.maj_email_utilisateur("jojo", "adresse-invalide").is_err());
+        let utilisateur = s.maj_email_utilisateur("jojo", "jojo@exemple.fr").unwrap();
+        assert_eq!(utilisateur.email, "jojo@exemple.fr");
+        assert!(s.maj_email_utilisateur("inconnu", "a@b.fr").is_err());
     }
 
     #[test]

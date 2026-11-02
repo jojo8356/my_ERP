@@ -86,6 +86,20 @@ $ERP /auth connexion admin --mot-de-passe "MotDePasse-Local-2026" --totp "$CODE"
 $ERP /auth statut | grep "admin"
 $ERP /admin audit --verifier | grep "aucune altération"
 $ERP /auth deconnexion >/dev/null
+# SEC-03 : second facteur envoyé par e-mail (empreinte seule, usage unique).
+$ERP /utilisateurs email admin --email admin@exemple.fr | grep "Adresse e-mail"
+$ERP /utilisateurs code admin | grep "envoyé à"
+CODE_MAIL=$(grep -h "Voici votre code de connexion" "$DONNEES"/courriels/*.eml |
+            tail -1 | sed 's/.* : //' | tr -d '\r ')
+test "${#CODE_MAIL}" -eq 6
+$ERP /auth connexion admin --mot-de-passe "MotDePasse-Local-2026" --code "$CODE_MAIL" |
+  grep "code reçu par e-mail"
+$ERP /auth deconnexion >/dev/null
+# Rejouer le même code doit être refusé (usage unique).
+if $ERP /auth connexion admin --mot-de-passe "MotDePasse-Local-2026" --code "$CODE_MAIL" \
+     2>&1 | grep -q "Connecté"; then
+  echo "✗ le code de connexion a été rejoué" >&2; exit 1
+fi
 
 echo "── 13. Devises : taux daté et conversion"
 $ERP /devises taux USD 2026-01-15 0,92 | grep "Taux enregistré"
@@ -101,4 +115,11 @@ $ERP /admin sauvegarde | grep -i "sauvegarde"
 test -f "$DONNEES/meta.tsv" && echo "    meta.tsv présent (société courante, session, séquence)"
 test -n "$(ls "$DONNEES"/tables/*.tsv 2>/dev/null | sed -n '1,1p')" && echo "    tables/*.tsv présentes : persistance OK"
 $ERP /admin sante | sed -n '1,5p'
+
+echo "── 16. Facture obligatoire ou non (CDC §11.2)"
+$ERP /clients nouveau --nom "Camille Particulier" --type particulier >/dev/null
+$ERP /factures nouvelle --client particulier --ligne "Dépannage;1;10,00" | grep "facultative"
+$ERP /factures nouvelle --client particulier --ligne "Dépannage;1;40,00" | grep "facture obligatoire"
+$ERP /factures nouvelle --client particulier --ligne "Dépannage;1;5,00" --sur-demande |
+  grep "demandée"
 echo "✅ Scénario terminé"

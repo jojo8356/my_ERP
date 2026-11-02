@@ -75,6 +75,63 @@ pub fn ddl_postgres() -> Result<String, String> {
         .map_err(|e| format!("génération de la migration impossible : {e:?}"))
 }
 
+/// Type PostgreSQL d'une colonne, tel que le produisent les migrations Rustorm.
+fn type_postgres(ty: &rustorm::schema::Scalar) -> &'static str {
+    use rustorm::schema::Scalar;
+    match ty {
+        Scalar::Int => "INTEGER",
+        Scalar::BigInt => "BIGINT",
+        Scalar::Float => "DOUBLE PRECISION",
+        Scalar::Boolean => "BOOLEAN",
+        Scalar::String | Scalar::Enum(_) => "TEXT",
+        Scalar::DateTime => "TIMESTAMPTZ",
+        Scalar::Bytes => "BYTEA",
+        Scalar::Json => "JSONB",
+        Scalar::Decimal { .. } => "NUMERIC",
+    }
+}
+
+/// Migration **additive** : ajoute au serveur les colonnes apparues dans le
+/// modèle depuis la création de la base.
+///
+/// `initial_sql` ne crée que les tables manquantes ; sans cette passe, une base
+/// existante resterait sur l'ancien modèle et la lecture échouerait. Chaque
+/// instruction est idempotente (`IF NOT EXISTS`), donc rejouable à chaque
+/// démarrage, et n'ajoute `NOT NULL` que si une valeur par défaut existe — une
+/// colonne ajoutée ne peut ainsi jamais invalider des lignes déjà présentes.
+pub fn alter_postgres() -> Result<String, String> {
+    let schema = schema()?;
+    let mut sql = String::from("-- Colonnes ajoutées au modèle depuis la création de la base.\n");
+    for model in &schema.models {
+        for field in &model.fields {
+            let mut instruction = format!(
+                "ALTER TABLE \"{}\" ADD COLUMN IF NOT EXISTS \"{}\" {}",
+                model.table.replace('"', ""),
+                field.column.replace('"', ""),
+                type_postgres(&field.ty)
+            );
+            let defaut = match &field.default {
+                Some(rustorm::schema::DefaultValue::String(v)) => {
+                    Some(format!("'{}'", v.replace('\'', "''")))
+                }
+                Some(rustorm::schema::DefaultValue::Number(v)) => Some(v.clone()),
+                Some(rustorm::schema::DefaultValue::Boolean(v)) => Some(v.to_string()),
+                Some(rustorm::schema::DefaultValue::Now) => Some("now()".to_string()),
+                _ => None,
+            };
+            if let Some(defaut) = &defaut {
+                instruction.push_str(&format!(" DEFAULT {defaut}"));
+                if !field.nullable && !field.id {
+                    instruction.push_str(" NOT NULL");
+                }
+            }
+            instruction.push_str(";\n");
+            sql.push_str(&instruction);
+        }
+    }
+    Ok(sql)
+}
+
 /// SHA-256 hexadécimal (primitive partagée : audit, sauvegardes, empreintes).
 pub fn sha256(donnees: &[u8]) -> String {
     rustorm::checksum::sha256(donnees)
@@ -150,6 +207,28 @@ mod tests {
         assert!(ddl.contains("CREATE TABLE \"ecritures\""));
         assert!(ddl.contains("PRIMARY KEY"));
         assert!(ddl.contains("CREATE INDEX"));
+    }
+
+    #[test]
+    fn la_migration_additive_est_rejouable() {
+        let sql = alter_postgres().expect("ALTER");
+        // Chaque table du modèle et chaque colonne y passent, sans jamais
+        // supprimer ni renommer quoi que ce soit.
+        for (table, colonnes) in tables() {
+            assert!(sql.contains(&format!("ALTER TABLE \"{table}\"")), "{table} absent");
+            for colonne in colonnes {
+                assert!(
+                    sql.contains(&format!("ADD COLUMN IF NOT EXISTS \"{colonne}\"")),
+                    "{table}.{colonne} absent"
+                );
+            }
+        }
+        assert!(sql.contains("IF NOT EXISTS"));
+        assert!(!sql.to_uppercase().contains("DROP"), "une migration ne supprime rien");
+        // Une colonne NOT NULL n'est ajoutée qu'avec une valeur par défaut.
+        for ligne in sql.lines().filter(|l| l.contains("NOT NULL")) {
+            assert!(ligne.contains("DEFAULT"), "sans défaut : {ligne}");
+        }
     }
 
     #[test]

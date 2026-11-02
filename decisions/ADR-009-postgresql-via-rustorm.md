@@ -43,7 +43,10 @@ Points de conception :
    fois.
 3. **Le schéma crée la base.** `Store::ouvrir_bdd` applique la migration si
    `clients` n'existe pas encore : la base est initialisée par l'ORM, jamais par
-   un script SQL écrit à la main. La migration reste rejouable (`/admin bdd`).
+   un script SQL écrit à la main. La migration reste rejouable (`/admin bdd`), et
+   une passe **additive** (`orm::alter_postgres`, `ADD COLUMN IF NOT EXISTS`)
+   rattrape à chaque démarrage les colonnes apparues depuis la création de la
+   base : ajouter un champ au `.rsm` ne demande donc ni `DROP`, ni script manuel.
 4. **Écriture transactionnelle.** Chaque `persister()` remplace l'ensemble des
    tables dans **une transaction** : une panne au milieu ne laisse jamais la
    comptabilité à moitié enregistrée (ENF-FIA-01), ce que le mode fichier ne
