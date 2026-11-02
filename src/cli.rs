@@ -4021,7 +4021,13 @@ mod tests {
         let texte = lancer(&mut app, "/clients piste note \"\"");
         assert!(texte.contains("ERREUR"), "{texte}");
         // Suppression d'une note par son numéro.
-        let id = app.store.notes_client(app.store.clients()[0].id)[0].id;
+        let piste = app
+            .store
+            .clients()
+            .into_iter()
+            .find(|c| c.nom.contains("Piste"))
+            .expect("fiche Piste SARL");
+        let id = app.store.notes_client(piste.id)[0].id;
         let texte = lancer(&mut app, &format!("/clients piste notes supprimer {id}"));
         assert!(texte.contains("supprimée"), "{texte}");
         assert!(lancer(&mut app, "/clients piste notes").contains("Aucune note"));
@@ -4029,14 +4035,22 @@ mod tests {
         let texte = lancer(&mut app, "/clients piste statut client");
         assert!(texte.contains("statut"), "{texte}");
         assert!(texte.contains("client"), "{texte}");
-        assert!(!app.store.clients()[0].est_prospect());
+        assert!(!app.store.client_par_id(piste.id).unwrap().est_prospect());
         let texte = lancer(&mut app, "/clients piste statut prospect");
         assert!(texte.contains("prospect"), "{texte}");
-        assert!(app.store.clients()[0].est_prospect());
-        // Statut inchangé : pas de double conversion dans l'audit.
-        let avant = app.store.audit_complet().len();
+        assert!(app.store.client_par_id(piste.id).unwrap().est_prospect());
+        // Statut inchangé : aucun nouvel événement métier (le journal d'audit
+        // garde une trace de chaque commande, action `cli`, on l'ignore ici).
+        let metier = |a: &App| {
+            a.store
+                .audit_complet()
+                .iter()
+                .filter(|e| e.action != "cli")
+                .count()
+        };
+        let avant = metier(&app);
         lancer(&mut app, "/clients piste statut prospect");
-        assert_eq!(app.store.audit_complet().len(), avant);
+        assert_eq!(metier(&app), avant, "statut inchangé = pas de conversion");
     }
 
     #[test]
