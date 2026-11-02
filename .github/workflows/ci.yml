@@ -9,42 +9,52 @@ jobs:
   # (fichiers locaux pilotés par le schéma Rustorm).
   recette:
     runs-on: ubuntu-latest
+    env:
+      JOURNAL: /tmp/test-all.log
     steps:
       - uses: actions/checkout@v4
       - name: Recette complète (test-all.sh, sans base)
         run: |
           set +e
           bash test-all.sh --rapide > /tmp/test-all.log 2>&1; code=$?
-          tail -60 /tmp/test-all.log
-          if [ $code -ne 0 ]; then
-            # Les journaux d'actions ne sont pas lisibles hors GitHub : le
-            # résumé et la fin de la sortie partent en annotation.
-            python3 -c "import sys; d=open('/tmp/test-all.log',encoding='utf-8',errors='replace').read()[-6000:]; print('::error::'+d.replace('%','%25').replace('\n','%0A'))"
-          fi
+          tail -40 /tmp/test-all.log
           exit $code
       - name: Diagnostic (erreurs et échecs de test dans l'onglet Annotations)
         if: failure()
         run: |
-          python3 - <<'PY'
-          import os, re
-          chemin = "/tmp/test-all.log"
-          if os.path.exists(chemin):
+          python3 - "$JOURNAL" <<'PY'
+          import sys
+
+          chemin = sys.argv[1]
+          try:
               lignes = open(chemin, encoding="utf-8", errors="replace").read().splitlines()
-              print(f"::group::{chemin} ({len(lignes)} lignes)")
-              for i, ligne in enumerate(lignes):
-                  interessant = (
-                      ligne.startswith("error")
-                      or ligne.startswith("---- ")
-                      or " panicked at " in ligne
-                      or ligne.lstrip().startswith(("left:", "right:"))
-                      or "assertion" in ligne
-                      or ligne.lstrip().startswith("✗")
-                  )
-                  if interessant:
-                      for extra in [ligne] + lignes[i + 1:i + 4]:
-                          if extra.strip():
-                              print("::error::" + extra.replace("%", "%25"))
-              print("::endgroup::")
+          except OSError:
+              sys.exit(0)
+
+          SÉPARATEUR = chr(10)
+
+          def annonce(titre, extrait):
+              print("::error title=%s::%s" % (titre, extrait.replace("%", "%25")[:3800]))
+
+          # 1. les lignes qui expliquent l'échec
+          for i, ligne in enumerate(lignes):
+              nu = ligne.strip()
+              interessant = (
+                  nu.startswith("✗")
+                  or nu.startswith("error[")
+                  or nu.startswith("error:")
+                  or " panicked at " in ligne
+                  or " test result: FAILED" in ligne
+                  or nu.startswith("---- ")
+              )
+              if interessant:
+                  contexte = [ligne] + [l for l in lignes[i + 1:i + 3] if l.strip()]
+                  annonce("échec", SÉPARATEUR.join(contexte))
+
+          # 2. la fin du journal, en morceaux : l'annotation est limitée à ~4 ko
+          fin = SÉPARATEUR.join(lignes[-40:])
+          for debut in range(0, len(fin), 3500):
+              annonce("fin du journal", fin[debut:debut + 3500])
           PY
 
   # Le même ERP, mais l'état vit dans PostgreSQL : Rustorm crée le schéma
@@ -71,6 +81,7 @@ jobs:
           --health-retries 20
     env:
       ERP_DATABASE_URL: postgres://erp@127.0.0.1:5432/erp
+      JOURNAL: /tmp/test-all-pg.log
     steps:
       - uses: actions/checkout@v4
       - name: libpq (connecteur PostgreSQL de Rustorm)
@@ -79,27 +90,42 @@ jobs:
         run: |
           set +e
           bash test-all.sh --features postgres --bdd "$ERP_DATABASE_URL" > /tmp/test-all-pg.log 2>&1; code=$?
-          tail -80 /tmp/test-all-pg.log
-          if [ $code -ne 0 ]; then
-            python3 -c "import sys; d=open('/tmp/test-all-pg.log',encoding='utf-8',errors='replace').read()[-6000:]; print('::error::'+d.replace('%','%25').replace('\n','%0A'))"
-          fi
+          tail -40 /tmp/test-all-pg.log
           exit $code
-      - name: Diagnostic PostgreSQL
+      - name: Diagnostic (erreurs et échecs de test dans l'onglet Annotations)
         if: failure()
         run: |
-          python3 - <<'PY'
-          import os
-          chemin = "/tmp/test-all-pg.log"
-          if os.path.exists(chemin):
+          python3 - "$JOURNAL" <<'PY'
+          import sys
+
+          chemin = sys.argv[1]
+          try:
               lignes = open(chemin, encoding="utf-8", errors="replace").read().splitlines()
-              print("::group::journal PostgreSQL")
-              for i, ligne in enumerate(lignes):
-                  if (ligne.startswith("error")
-                          or " panicked at " in ligne
-                          or ligne.lstrip().startswith("✗")
-                          or "PostgreSQL" in ligne):
-                      for extra in [ligne] + lignes[i + 1:i + 4]:
-                          if extra.strip():
-                              print("::error::" + extra.replace("%", "%25"))
-              print("::endgroup::")
+          except OSError:
+              sys.exit(0)
+
+          SÉPARATEUR = chr(10)
+
+          def annonce(titre, extrait):
+              print("::error title=%s::%s" % (titre, extrait.replace("%", "%25")[:3800]))
+
+          # 1. les lignes qui expliquent l'échec
+          for i, ligne in enumerate(lignes):
+              nu = ligne.strip()
+              interessant = (
+                  nu.startswith("✗")
+                  or nu.startswith("error[")
+                  or nu.startswith("error:")
+                  or " panicked at " in ligne
+                  or " test result: FAILED" in ligne
+                  or nu.startswith("---- ")
+              )
+              if interessant:
+                  contexte = [ligne] + [l for l in lignes[i + 1:i + 3] if l.strip()]
+                  annonce("échec", SÉPARATEUR.join(contexte))
+
+          # 2. la fin du journal, en morceaux : l'annotation est limitée à ~4 ko
+          fin = SÉPARATEUR.join(lignes[-40:])
+          for debut in range(0, len(fin), 3500):
+              annonce("fin du journal", fin[debut:debut + 3500])
           PY
