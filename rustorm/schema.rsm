@@ -64,6 +64,20 @@ model Utilisateur {
   @@map("utilisateurs")
 }
 
+/// Note datée attachée à une fiche (prospect ou client) : journal de contacts
+/// (« appelé le 12, relancé le 20 »), conservé avec la fiche et exportable.
+model Note {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  client_id BigInt
+  date_note String @default("")
+  texte String @default("")
+  auteur String @default("")
+  cree_le String @default("")
+  @@index([client_id])
+  @@map("notes")
+}
+
 model Client {
   id BigInt @id @default(autoincrement())
   societe_id BigInt

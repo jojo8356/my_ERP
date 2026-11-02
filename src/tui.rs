@@ -44,8 +44,8 @@ pub const ONGLETS: [(&str, &str); 8] = [
 ];
 
 /// Ligne de raccourcis affichée en permanence (CDC §6.2).
-pub const RACCOURCIS: &str =
-    "←→ onglets · ↑↓ défiler · n nouveau · p paiement · s recherche · r rafraîchir · ? aide · q quitter";
+pub const RACCOURCIS: &str = "←→ onglets · ↑↓ défiler · n nouveau · c statut prospect↔client \
+· o note · p paiement · s recherche · r rafraîchir · ? aide · q quitter";
 
 // ------------------------------------------------------------------ Formulaire
 
@@ -57,6 +57,9 @@ pub struct Champ {
     pub valeur: String,
     pub obligatoire: bool,
     pub indice: &'static str,
+    /// Bascule graphique (interrupteur) : les deux positions possibles, dans
+    /// l'ordre (« éteinte », « allumée »). `None` = champ texte.
+    pub bascule: Option<(&'static str, &'static str)>,
 }
 
 impl Champ {
@@ -72,7 +75,58 @@ impl Champ {
             valeur: String::new(),
             obligatoire,
             indice,
+            bascule: None,
         }
+    }
+
+    /// Interrupteur à deux positions (Espace pour basculer) : plus simple qu'un
+    /// champ texte pour un choix binaire comme prospect/client.
+    pub fn bascule(
+        cle: &'static str,
+        libelle: &'static str,
+        positions: (&'static str, &'static str),
+        indice: &'static str,
+    ) -> Self {
+        Self {
+            bascule: Some(positions),
+            valeur: positions.0.to_string(),
+            ..Self::new(cle, libelle, false, indice)
+        }
+    }
+
+    pub fn est_bascule(&self) -> bool {
+        self.bascule.is_some()
+    }
+
+    /// Bascule sur l'autre position (sans effet sur un champ texte).
+    pub fn basculer(&mut self) {
+        if let Some((eteint, allume)) = self.bascule {
+            self.valeur = if self.valeur == eteint {
+                allume.to_string()
+            } else {
+                eteint.to_string()
+            };
+        }
+    }
+
+    /// Rendu de l'interrupteur : `[●] client   [○] prospect`.
+    ///
+    /// L'ordre des positions est fixe : seule la marque se déplace, l'œil ne
+    /// « saute » pas d'un côté à l'autre quand on bascule.
+    pub fn affichage_bascule(&self) -> Option<String> {
+        let (premier, second) = self.bascule?;
+        let marque = |position: &str| {
+            if self.valeur == position {
+                '●'
+            } else {
+                '○'
+            }
+        };
+        Some(format!(
+            "[{}] {premier}   [{}] {second}",
+            marque(premier),
+            marque(second)
+        ))
     }
 
     /// Valeur nettoyée : les guillemets sont retirés (ils casseraient le
@@ -111,8 +165,8 @@ impl Formulaire {
     }
 
     /// Formulaire de création de client **ou de prospect** (EF-CRM-01).
-    /// Le statut est pré-rempli à « client » : appuyer sur Entrée crée un
-    /// client, taper « prospect » crée une piste commerciale.
+    /// Le statut est un **interrupteur** : il démarre sur « client », la barre
+    /// d'espace le passe sur « prospect » (piste commerciale).
     pub fn client() -> Self {
         let mut form = Self::nouveau(
             "Nouveau client / prospect",
@@ -121,13 +175,48 @@ impl Formulaire {
             vec![
                 Champ::new("nom", "Nom", true, "raison sociale ou nom+prénom"),
                 Champ::new("type", "Type", true, "particulier | professionnel | association"),
-                Champ::new("statut", "Statut", false, "client (défaut) ou prospect"),
+                Champ::bascule(
+                    "statut",
+                    "Statut (Espace pour basculer)",
+                    ("client", "prospect"),
+                    "interrupteur : client = relation établie, prospect = piste",
+                ),
                 Champ::new("email", "E-mail", false, "facultatif, sert à l'envoi"),
                 Champ::new("ville", "Ville", false, "facultatif"),
             ],
         );
         form.champs[2].valeur = "client".to_string();
         form
+    }
+
+    /// Bascule prospect ↔ client d'une fiche existante (touche `c` de l'onglet
+    /// Clients) : on saisit le nom, puis l'interrupteur dit où l'on va.
+    pub fn statut_client() -> Self {
+        Self::nouveau(
+            "Statut de la fiche",
+            "/clients \"{nom}\" statut {statut}",
+            vec![
+                Champ::new("nom", "Fiche", true, "nom, e-mail ou n° de client"),
+                Champ::bascule(
+                    "statut",
+                    "Statut (Espace pour basculer)",
+                    ("client", "prospect"),
+                    "client = facturation ouverte · prospect = devis seulement",
+                ),
+            ],
+        )
+    }
+
+    /// Nouvelle note sur une fiche (touche `o` de l'onglet Clients).
+    pub fn note_client() -> Self {
+        Self::nouveau(
+            "Nouvelle note",
+            "/clients \"{nom}\" note \"{texte}\"",
+            vec![
+                Champ::new("nom", "Fiche", true, "nom, e-mail ou n° de client"),
+                Champ::new("texte", "Note", true, "appel, relance, information à garder"),
+            ],
+        )
     }
 
     /// Formulaire de création de document (devis ou facture).
@@ -270,12 +359,23 @@ impl Formulaire {
 
     pub fn saisir(&mut self, c: char) {
         if let Some(champ) = self.champs.get_mut(self.focus) {
+            if champ.est_bascule() {
+                // Sur un interrupteur, seule la barre d'espace agit : on ne
+                // tape pas une valeur binaire au clavier.
+                if c == ' ' {
+                    champ.basculer();
+                }
+                return;
+            }
             champ.valeur.push(c);
         }
     }
 
     pub fn effacer(&mut self) {
         if let Some(champ) = self.champs.get_mut(self.focus) {
+            if champ.est_bascule() {
+                return;
+            }
             champ.valeur.pop();
         }
     }
@@ -475,6 +575,14 @@ impl Vue {
             KeyCode::Char('n') => {
                 self.formulaire = Some(self.formulaire_onglet());
             }
+            // `c` : interrupteur prospect ↔ client (CDC Module A).
+            KeyCode::Char('c') => {
+                self.formulaire = Some(Formulaire::statut_client());
+            }
+            // `o` : nouvelle note datée sur une fiche.
+            KeyCode::Char('o') => {
+                self.formulaire = Some(Formulaire::note_client());
+            }
             KeyCode::Char('p') => {
                 self.formulaire = Some(Formulaire::paiement());
             }
@@ -651,6 +759,13 @@ fn dessiner_aide(frame: &mut Frame, vue: &Vue) {
     lignes.push(TxtLine::from(RACCOURCIS));
     lignes.push(TxtLine::from(""));
     lignes.push(TxtLine::from(
+        "Prospect ↔ client : touche c, puis Espace sur l'interrupteur, Entrée pour valider.",
+    ));
+    lignes.push(TxtLine::from(
+        "Notes : touche o — une note datée est conservée avec la fiche (journal).",
+    ));
+    lignes.push(TxtLine::from(""));
+    lignes.push(TxtLine::from(
         "Toute commande du CLI s'exécute aussi ici : tapez-la dans un terminal.",
     ));
     let bloc = Block::default()
@@ -684,10 +799,13 @@ fn dessiner_formulaire(frame: &mut Frame, form: &Formulaire) {
             format!("{marque} {}", champ.libelle),
             style_titre(),
         )));
-        lignes.push(TxtLine::from(Span::styled(
-            format!("  {}▏", champ.valeur),
-            style,
-        )));
+        match champ.affichage_bascule() {
+            Some(rendu) => lignes.push(TxtLine::from(Span::styled(format!("  {rendu}"), style))),
+            None => lignes.push(TxtLine::from(Span::styled(
+                format!("  {}▏", champ.valeur),
+                style,
+            ))),
+        }
         lignes.push(TxtLine::from(Span::styled(
             format!("  {}", champ.indice),
             Style::default().fg(rgb(theme::VIOLET_INACTIF_RGB)),
@@ -700,7 +818,7 @@ fn dessiner_formulaire(frame: &mut Frame, form: &Formulaire) {
         )));
     }
     lignes.push(TxtLine::from(Span::styled(
-        "Entrée valider · Tab champ suivant · Échap annuler",
+        "Entrée valider · Tab champ suivant · Espace bascule · Échap annuler",
         style_onglet_inactif(),
     )));
 
@@ -845,6 +963,83 @@ mod tests {
         let erreur = form.commande().unwrap_err();
         assert!(erreur.contains("Nom"), "{erreur}");
         assert!(erreur.contains("obligatoire"), "{erreur}");
+    }
+
+    #[test]
+    fn l_interrupteur_de_statut_bascule_et_alimente_la_commande() {
+        let mut form = Formulaire::client();
+        let statut = &form.champs[2];
+        assert!(statut.est_bascule());
+        assert_eq!(statut.valeur, "client", "client par défaut");
+        // Rendu lisible : la position active est marquée.
+        let rendu = statut.affichage_bascule().unwrap();
+        assert!(rendu.contains("[●] client"), "{rendu}");
+        assert!(rendu.contains("[○] prospect"), "{rendu}");
+        // Espace bascule, les autres touches ne touchent pas à l'interrupteur.
+        form.focus = 2;
+        form.saisir('x');
+        assert_eq!(form.champs[2].valeur, "client");
+        form.saisir(' ');
+        assert_eq!(form.champs[2].valeur, "prospect");
+        assert!(form.champs[2].affichage_bascule().unwrap().contains("[●] prospect"));
+        form.saisir(' ');
+        assert_eq!(form.champs[2].valeur, "client");
+        form.saisir(' ');
+        // Retour arrière ne casse pas un interrupteur.
+        form.effacer();
+        assert_eq!(form.champs[2].valeur, "prospect");
+        form.champs[0].valeur = "Piste SARL".into();
+        form.champs[1].valeur = "professionnel".into();
+        let commande = form.commande().unwrap();
+        assert!(commande.ends_with("--statut prospect"), "{commande}");
+    }
+
+    #[test]
+    fn la_touche_c_ouvre_le_switch_de_statut_et_valide() {
+        let mut app = App::memoire();
+        app.executer(
+            "/clients nouveau --nom \"Piste SARL\" --type pro --prospect",
+            &mut Vec::new(),
+        )
+        .unwrap();
+        let mut vue = Vue::nouvelle();
+        vue.onglet = 1; // Clients
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('c')));
+        let form = vue.formulaire.as_ref().expect("formulaire statut");
+        assert_eq!(form.champs[1].valeur, "client", "l'interrupteur propose client");
+        // Saisie du nom, puis bascule déjà sur « client » : Entrée convertit.
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('P')));
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('i')));
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Enter));
+        assert!(vue.formulaire.is_none(), "formulaire refermé");
+        assert!(vue.message.contains("statut"), "{}", vue.message);
+        assert!(!vue.message.contains('✗'), "{}", vue.message);
+        assert!(app.store.clients().iter().all(|c| !c.est_prospect()));
+    }
+
+    #[test]
+    fn la_touche_o_ajoute_une_note_a_une_fiche() {
+        let mut app = App::memoire();
+        app.executer("/clients nouveau --nom \"Dupont\" --type pro", &mut Vec::new())
+            .unwrap();
+        let mut vue = Vue::nouvelle();
+        vue.onglet = 1;
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('o')));
+        assert!(vue.formulaire.is_some());
+        for c in "Dupont".chars() {
+            vue.touche(&mut app, KeyEvent::from(KeyCode::Char(c)));
+        }
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Tab));
+        for c in "Rappeler lundi".chars() {
+            vue.touche(&mut app, KeyEvent::from(KeyCode::Char(c)));
+        }
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Enter));
+        assert!(vue.formulaire.is_none(), "{:?}", vue.formulaire);
+        let client = app.store.clients()[0].clone();
+        let notes = app.store.notes_client(client.id);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].texte, "Rappeler lundi");
+        assert!(vue.message.contains("Note"), "{}", vue.message);
     }
 
     #[test]

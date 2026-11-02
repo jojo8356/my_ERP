@@ -112,6 +112,23 @@ impl Utilisateur {
     }
 }
 
+/// Note datée sur une fiche (prospect ou client) : c'est le journal de la
+/// relation commerciale (« relancé le 12 », « demande un devis en janvier »).
+///
+/// Distincte du champ libre `Client.notes`, qui reste un résumé : une note est
+/// **horodatée, signée et conservée** avec la fiche (RGPD-02 : le dernier
+/// contact peut être une note).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Note {
+    pub id: i64,
+    pub societe_id: i64,
+    pub client_id: i64,
+    pub date_note: String,
+    pub texte: String,
+    pub auteur: String,
+    pub cree_le: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sequence {
     pub id: i64,
@@ -274,6 +291,7 @@ pub struct Store {
     societes: Vec<Societe>,
     utilisateurs: Vec<Utilisateur>,
     clients: Vec<Client>,
+    notes: Vec<Note>,
     documents: Vec<Document>,
     paiements: Vec<Paiement>,
     ecritures: Vec<Ecriture>,
@@ -308,6 +326,7 @@ impl Store {
             societes: Vec::new(),
             utilisateurs: Vec::new(),
             clients: Vec::new(),
+            notes: Vec::new(),
             documents: Vec::new(),
             paiements: Vec::new(),
             ecritures: Vec::new(),
@@ -432,6 +451,9 @@ impl Store {
         for l in decoder("clients")? {
             self.clients.push(fichier::decoder_client(&l)?);
         }
+        for l in decoder("notes")? {
+            self.notes.push(fichier::decoder_note(&l)?);
+        }
         for l in decoder("documents")? {
             self.documents.push(fichier::decoder_document(&l)?);
         }
@@ -514,6 +536,9 @@ impl Store {
         for l in decoder("clients")? {
             self.clients.push(fichier::decoder_client(&l)?);
         }
+        for l in decoder("notes")? {
+            self.notes.push(fichier::decoder_note(&l)?);
+        }
         for l in decoder("documents")? {
             self.documents.push(fichier::decoder_document(&l)?);
         }
@@ -584,6 +609,12 @@ impl Store {
             lignes.push(fichier::encoder_client(c)?);
         }
         tables.push(("clients", lignes));
+
+        let mut lignes = Vec::new();
+        for n in &self.notes {
+            lignes.push(fichier::encoder_note(n)?);
+        }
+        tables.push(("notes", lignes));
 
         let mut lignes_doc = Vec::new();
         let mut lignes_lignes = Vec::new();
@@ -710,6 +741,7 @@ impl Store {
             ("societes", self.societes.len()),
             ("utilisateurs", self.utilisateurs.len()),
             ("clients", self.clients.len()),
+            ("notes", self.notes.len()),
             ("documents", self.documents.len()),
             (
                 "lignes",
@@ -755,6 +787,7 @@ impl Store {
         self.societes.clear();
         self.utilisateurs.clear();
         self.clients.clear();
+        self.notes.clear();
         self.documents.clear();
         self.paiements.clear();
         self.ecritures.clear();
@@ -1147,6 +1180,14 @@ impl Store {
             dates.push(client.cree_le.as_str());
             dates.push(client.modifie_le.as_str());
         }
+        // Une note (appel, relance) est un contact au sens RGPD-02.
+        for note in self
+            .notes
+            .iter()
+            .filter(|n| n.client_id == client_id && n.societe_id == self.societe_courante)
+        {
+            dates.push(note.date_note.as_str());
+        }
         let documents: Vec<&Document> = self
             .documents
             .iter()
@@ -1192,6 +1233,68 @@ impl Store {
             .collect();
         sortie.sort_by(|a, b| a.1.cmp(&b.1));
         sortie
+    }
+
+    // ---------------------------------------------------------- Notes de fiche
+
+    /// Ajoute une note datée à une fiche (prospect ou client) et renvoie la note
+    /// créée. L'auteur est la session courante : le journal dit qui a écrit.
+    pub fn noter_client(&mut self, client_id: i64, texte: &str) -> Resultat<Note> {
+        let texte = texte.trim();
+        if texte.is_empty() {
+            return Err("la note est vide — précisez le texte à conserver".into());
+        }
+        let client = self.client_par_id(client_id)?;
+        let societe_id = self.societe()?.id;
+        let note = Note {
+            id: self.alloc_id(),
+            societe_id,
+            client_id,
+            date_note: aujourdhui(),
+            texte: texte.to_string(),
+            auteur: self.session.clone(),
+            cree_le: horodatage(),
+        };
+        self.notes.push(note.clone());
+        self.persister()?;
+        self.journaliser("client.note", &format!("{} (n°{})", client.nom, client.id))?;
+        Ok(note)
+    }
+
+    /// Notes d'une fiche, de la plus ancienne à la plus récente (lecture du
+    /// journal), limitées à la société courante.
+    pub fn notes_client(&self, client_id: i64) -> Vec<Note> {
+        let mut notes: Vec<Note> = self
+            .notes
+            .iter()
+            .filter(|n| n.client_id == client_id && n.societe_id == self.societe_courante)
+            .cloned()
+            .collect();
+        notes.sort_by_key(|n| n.id);
+        notes
+    }
+
+    /// Toutes les notes (export, `/admin sante`).
+    pub fn notes(&self) -> Vec<Note> {
+        self.notes
+            .iter()
+            .filter(|n| n.societe_id == self.societe_courante)
+            .cloned()
+            .collect()
+    }
+
+    /// Supprime une note (erreur de saisie). Les pièces comptables, elles, ne se
+    /// suppriment jamais : une note n'en est pas une.
+    pub fn supprimer_note(&mut self, id: i64) -> Resultat<Note> {
+        let idx = self
+            .notes
+            .iter()
+            .position(|n| n.id == id)
+            .ok_or_else(|| format!("note n°{id} introuvable"))?;
+        let note = self.notes.remove(idx);
+        self.persister()?;
+        self.journaliser("client.note-suppression", &format!("note n°{id}"))?;
+        Ok(note)
     }
 
     pub fn creer_client(&mut self, mut client: Client) -> Resultat<Client> {
@@ -1307,10 +1410,17 @@ impl Store {
         client.etiquettes.clear();
         client.reference_externe.clear();
         client.rgpd_efface_le = aujourdhui();
+        // Les notes sont du texte libre (donc des données personnelles) : elles
+        // partent avec l'anonymisation, seules les pièces comptables restent.
+        let notes_supprimees = self.notes.iter().filter(|n| n.client_id == client_id).count();
+        self.notes.retain(|n| n.client_id != client_id);
         self.modifier_client(client)?;
         self.journaliser(
             "rgpd.effacement",
-            &format!("client n°{client_id} anonymisé ({documents} pièces conservées)"),
+            &format!(
+                "client n°{client_id} anonymisé ({documents} pièces conservées, \
+                 {notes_supprimees} note(s) supprimée(s))"
+            ),
         )?;
         Ok(format!(
             "client n°{client_id} anonymisé — {documents} pièce(s) comptable(s) conservée(s) 10 ans (obligation légale)"
@@ -3138,6 +3248,78 @@ mod tests {
         // sa conservation est comptable (10 ans).
         s.convertir_client(dormant.id).unwrap();
         assert!(s.prospects_perimes("2026-11-02").is_empty());
+    }
+
+    #[test]
+    fn notes_datees_sur_une_fiche() {
+        let mut s = Store::memoire();
+        societe_complete(&mut s);
+        let prospect = s
+            .creer_client(Client::prospect("Piste Nice", TypeClient::Professionnel))
+            .unwrap();
+        let client = s
+            .creer_client(Client::nouveau("Atelier Dupont", TypeClient::Professionnel))
+            .unwrap();
+        // Notes sur un prospect ET sur un client, signées par la session.
+        let note = s.noter_client(prospect.id, "Appelé, rappelle en janvier").unwrap();
+        assert_eq!(note.client_id, prospect.id);
+        assert_eq!(note.auteur, "local");
+        assert!(!note.date_note.is_empty());
+        assert_eq!(note.societe_id, s.societe().unwrap().id);
+        s.noter_client(prospect.id, "Devis envoyé").unwrap();
+        s.noter_client(client.id, "Paye toujours en retard").unwrap();
+        assert!(s.noter_client(client.id, "   ").is_err(), "note vide refusée");
+        assert!(s.noter_client(9999, "inconnu").is_err());
+
+        // Chaque fiche ne voit que ses notes, dans l'ordre de saisie.
+        let notes = s.notes_client(prospect.id);
+        assert_eq!(notes.len(), 2);
+        assert_eq!(notes[0].texte, "Appelé, rappelle en janvier");
+        assert_eq!(notes[1].texte, "Devis envoyé");
+        assert_eq!(s.notes_client(client.id).len(), 1);
+        assert_eq!(s.notes().len(), 3);
+
+        // Suppression d'une note (erreur de saisie).
+        let supprimee = s.supprimer_note(note.id).unwrap();
+        assert_eq!(supprimee.id, note.id);
+        assert_eq!(s.notes_client(prospect.id).len(), 1);
+        assert!(s.supprimer_note(note.id).is_err(), "déjà supprimée");
+
+        // Une note datée compte comme contact (RGPD-02 : la purge des prospects
+        // se calcule sur le dernier contact, notes comprises).
+        assert_eq!(
+            s.dernier_contact(prospect.id),
+            crate::domain::aujourdhui(),
+            "la note datée d'aujourd'hui est un contact"
+        );
+        // L'anonymisation RGPD efface aussi les notes (texte libre).
+        s.effacer_client_rgpd(client.id).unwrap();
+        assert!(s.notes_client(client.id).is_empty());
+        assert!(!s.notes().is_empty(), "les notes des autres fiches restent");
+    }
+
+    #[test]
+    fn les_notes_survivent_a_la_reouverture() {
+        let dossier = std::env::temp_dir().join(format!("erp-notes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dossier);
+        let id = {
+            let mut s = Store::ouvrir(&dossier).unwrap();
+            societe_complete(&mut s);
+            let client = s
+                .creer_client(Client::nouveau("Dupont", TypeClient::Professionnel))
+                .unwrap();
+            s.noter_client(client.id, "Première visite").unwrap();
+            s.noter_client(client.id, "Deuxième visite").unwrap();
+            client.id
+        };
+        let s = Store::ouvrir(&dossier).unwrap();
+        let notes = s.notes_client(id);
+        assert_eq!(notes.len(), 2, "les notes sont persistées comme les autres tables");
+        assert_eq!(notes[1].texte, "Deuxième visite");
+        assert_eq!(notes[1].auteur, "local");
+        // Le fichier attendu par le modèle existe bien.
+        assert!(dossier.join("tables").join("notes.tsv").exists());
+        let _ = std::fs::remove_dir_all(&dossier);
     }
 
     #[test]

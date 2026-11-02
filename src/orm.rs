@@ -36,6 +36,7 @@ pub fn tables() -> Vec<(&'static str, &'static [&'static str])> {
         ("societes", generated::societe::columns()),
         ("utilisateurs", generated::utilisateur::columns()),
         ("clients", generated::client::columns()),
+        ("notes", generated::note::columns()),
         ("documents", generated::document::columns()),
         ("lignes", generated::ligne::columns()),
         ("paiements", generated::paiement::columns()),

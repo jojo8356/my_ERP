@@ -186,10 +186,10 @@ etape_statique() {
   # Le schéma est la source de vérité : on compte les modèles déclarés.
   local modeles
   modeles=$(grep -c '^model ' rustorm/schema.rsm)
-  if [ "$modeles" -ge 16 ]; then
+  if [ "$modeles" -ge 17 ]; then
     printf '  %s✓%s modèle Rustorm : %s tables\n' "$VERT" "$NEUTRE" "$modeles" >&2
   else
-    printf '  %s✗%s modèle Rustorm : %s tables (16 attendues)\n' "$ROUGE" "$NEUTRE" "$modeles" >&2
+    printf '  %s✗%s modèle Rustorm : %s tables (17 attendues)\n' "$ROUGE" "$NEUTRE" "$modeles" >&2
     echecs=$((echecs + 1))
   fi
 
@@ -474,6 +474,8 @@ etape_base() {
   "$BIN" --bdd "$base_essai" /societe modifier --nom "Recette SQL" \
       --siren 123456789 --adresse "1 rue de la Paix" --ville Nice >>"$ref" 2>&1
   "$BIN" --bdd "$base_essai" /clients nouveau --nom "$suffixe" --type pro >>"$ref" 2>&1
+  # Les notes datées passent par la même table du modèle, donc par l'ORM.
+  "$BIN" --bdd "$base_essai" /clients "$suffixe" note "Note écrite en base" >>"$ref" 2>&1
   "$BIN" --bdd "$base_essai" /factures nouvelle --client "$suffixe" \
       --ligne "Maintenance;2;500,00;2000" >>"$ref" 2>&1
   local numero
@@ -490,6 +492,13 @@ etape_base() {
     printf '  %s✓%s facture %s validée, payée, relue depuis la base\n' "$VERT" "$NEUTRE" "$numero" >&2
   else
     printf '  %s✗%s relecture de la facture depuis la base\n' "$ROUGE" "$NEUTRE" >&2
+    echecs=$((echecs+1))
+  fi
+  if "$BIN" --bdd "$base_essai" /clients "$suffixe" notes 2>/dev/null |
+      grep -q "Note écrite en base"; then
+    printf '  %s✓%s note datée relue depuis la base\n' "$VERT" "$NEUTRE" >&2
+  else
+    printf '  %s✗%s relecture de la note depuis la base\n' "$ROUGE" "$NEUTRE" >&2
     echecs=$((echecs+1))
   fi
   if "$BIN" --bdd "$base_essai" /clients 2>/dev/null | grep -q "$suffixe"; then

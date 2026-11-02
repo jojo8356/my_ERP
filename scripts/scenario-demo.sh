@@ -141,4 +141,11 @@ if $ERP /devis "$DEVIS" transformer 2>&1 | grep -q "transformé"; then
 fi
 $ERP /clients piste convertir | grep "converti en client"
 $ERP /devis "$DEVIS" transformer | grep "transformé en facture"
+echo "── 18. Notes datées et bascule de statut (Module A)"
+$ERP /clients piste note "Appelé : intéressé par un audit en janvier" | grep "Note n°"
+$ERP /clients piste note "Devis envoyé par e-mail" >/dev/null
+$ERP /clients piste notes | grep "Appelé"
+$ERP /clients piste | grep "Journal : 2 note"
+$ERP /clients piste statut client | grep "statut ● client"
+$ERP /clients piste statut prospect | grep "statut ○ prospect"
 echo "✅ Scénario terminé"

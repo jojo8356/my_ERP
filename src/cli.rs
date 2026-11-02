@@ -270,6 +270,9 @@ fn aide_contexte(chemin: &[String]) -> &'static str {
 /clients nouveau --nom … --type pro|particulier|association [--prospect]
 /clients <recherche>         fiche (statut, dernier contact, historique, encours)
 /clients <recherche> factures
+/clients <recherche> note "…"         ajoute une note datée (journal de la fiche)
+/clients <recherche> notes            liste      |  notes supprimer <n°>
+/clients <recherche> statut client|prospect   bascule (utilisée par la TUI)
 /clients <recherche> convertir        prospect → client (débloque la facturation)
 /clients <recherche> prospect         client → prospect
 /clients <recherche> modifier --email … --ville … --statut prospect|client
@@ -722,6 +725,79 @@ impl App {
                             )),
                         )
                     }
+                    Some("statut") => {
+                        // Bascule utilisée par le switch de la TUI : une seule
+                        // commande, deux valeurs, aucune ambiguïté.
+                        let cible = StatutClient::depuis_code(
+                            rest.get(2)
+                                .copied()
+                                .or_else(|| opt(options, "statut"))
+                                .ok_or("usage : /clients <nom> statut client|prospect")?,
+                        );
+                        let fiche = if cible == client.statut {
+                            client.clone()
+                        } else {
+                            let mut fiche = client.clone();
+                            fiche.statut = cible;
+                            fiche.modifie_le = aujourdhui();
+                            self.store.modifier_client(fiche)?
+                        };
+                        if fiche.statut != client.statut {
+                            self.store.journaliser(
+                                if cible == StatutClient::Client {
+                                    "client.conversion"
+                                } else {
+                                    "client.prospect"
+                                },
+                                &fiche.nom,
+                            )?;
+                        }
+                        ecrire(
+                            sortie,
+                            theme::succes(format!(
+                                "✓ {} : statut {} {}",
+                                fiche.nom,
+                                fiche.statut.symbole(),
+                                fiche.statut.libelle()
+                            )),
+                        )
+                    }
+                    Some("note") | Some("notes")
+                        if rest.get(2).is_some_and(|a| a.to_lowercase() == "supprimer") =>
+                    {
+                        let id: i64 = rest
+                            .get(3)
+                            .ok_or("usage : /clients <nom> notes supprimer <n° de note>")?
+                            .parse()
+                            .map_err(|_| "numéro de note invalide".to_string())?;
+                        let note = self.store.supprimer_note(id)?;
+                        ecrire(
+                            sortie,
+                            theme::succes(format!("✓ Note n°{} supprimée : {}", note.id, note.texte)),
+                        )
+                    }
+                    Some("note") => {
+                        let texte = rest
+                            .get(2..)
+                            .map(|t| t.join(" "))
+                            .filter(|t| !t.trim().is_empty())
+                            .or_else(|| opt(options, "texte").map(|t| t.to_string()))
+                            .ok_or(
+                                "usage : /clients <nom> note \"texte de la note\" (ou --texte …)",
+                            )?;
+                        let note = self.store.noter_client(client.id, &texte)?;
+                        ecrire(
+                            sortie,
+                            theme::succes(format!(
+                                "✓ Note n°{} ajoutée à {} le {} (par {})",
+                                note.id,
+                                client.nom,
+                                date_fr(&note.date_note),
+                                note.auteur
+                            )),
+                        )
+                    }
+                    Some("notes") => self.lister_notes(&client, sortie),
                     Some("convertir") | Some("convert") => {
                         let client = self.store.convertir_client(client.id)?;
                         self.store
@@ -751,8 +827,8 @@ impl App {
                     Some("modifier") | Some("edit") => self.modifier_client(&client, options, sortie),
                     Some("rgpd") => self.rgpd_client(&client, rest.get(2).copied(), sortie),
                     Some(action) => Err(format!(
-                        "action « {action} » inconnue — essayez : factures | tag | detag | modifier | \
-                         convertir | prospect | rgpd"
+                        "action « {action} » inconnue — essayez : factures | note | notes | statut | \
+                         tag | detag | modifier | convertir | prospect | rgpd"
                     )),
                 }
             }
@@ -904,7 +980,35 @@ impl App {
             }
         }
         if !client.notes.is_empty() {
-            ecrire(sortie, format!("  notes         : {}", client.notes))?;
+            ecrire(sortie, format!("  notes libres  : {}", client.notes))?;
+        }
+        // Journal de notes datées (le « suivi » de la fiche).
+        let notes = self.store.notes_client(client.id);
+        if !notes.is_empty() {
+            ecrire(sortie, format!("  Journal : {} note(s)", notes.len()))?;
+            for note in notes.iter().rev().take(5) {
+                ecrire(
+                    sortie,
+                    format!(
+                        "   {:>4}  {}  {:<10}  {}",
+                        note.id,
+                        date_fr(&note.date_note),
+                        note.auteur,
+                        note.texte
+                    ),
+                )?;
+            }
+            if notes.len() > 5 {
+                ecrire(
+                    sortie,
+                    theme::info(format!("  ({} plus ancienne(s) : /clients {} notes)", notes.len() - 5, client.nom)),
+                )?;
+            }
+        } else {
+            ecrire(
+                sortie,
+                theme::info(format!("  Aucune note — /clients {} note \"…\"", client.nom)),
+            )?;
         }
         ecrire(
             sortie,
@@ -1017,6 +1121,37 @@ impl App {
             .flat_map(|t| etiquettes_depuis_texte(t))
             .collect();
         self.store.creer_client(client)
+    }
+
+    /// Journal de notes d'une fiche, de la plus ancienne à la plus récente.
+    fn lister_notes(&mut self, client: &Client, sortie: &mut dyn Write) -> Resultat<()> {
+        let notes = self.store.notes_client(client.id);
+        if notes.is_empty() {
+            return ecrire(
+                sortie,
+                format!(
+                    "Aucune note pour {}. Ajoutez-en une : /clients {} note \"…\"",
+                    client.nom, client.nom
+                ),
+            );
+        }
+        ecrire(
+            sortie,
+            theme::titre(format!("Notes — {} ({})", client.nom, client.qualite())),
+        )?;
+        for note in notes {
+            ecrire(
+                sortie,
+                format!(
+                    "  {:>4}  {}  {:<10}  {}",
+                    note.id,
+                    date_fr(&note.date_note),
+                    note.auteur,
+                    note.texte
+                ),
+            )?;
+        }
+        Ok(())
     }
 
     fn modifier_client(&mut self, client: &Client, options: &Options, sortie: &mut dyn Write) -> Resultat<()> {
@@ -3861,6 +3996,47 @@ mod tests {
         // Audit : la conversion est tracée.
         let audit = lancer(&mut app, "/admin audit");
         assert!(audit.contains("client.conversion"), "{audit}");
+    }
+
+    #[test]
+    fn notes_et_statut_via_le_cli() {
+        let mut app = app();
+        lancer(&mut app, "/clients nouveau --nom \"Piste SARL\" --type pro --prospect");
+        // Note sur un prospect, puis sur un client.
+        let texte = lancer(&mut app, "/clients piste note \"Appelé le matin, rappelle en janvier\"");
+        assert!(texte.contains("Note n°"), "{texte}");
+        assert!(texte.contains("ajoutée à Piste SARL"), "{texte}");
+        lancer(&mut app, "/clients nouveau --nom \"Atelier Dupont\" --type pro");
+        let texte = lancer(&mut app, "/clients dupont note \"Paye en retard\"");
+        assert!(texte.contains("ajoutée"), "{texte}");
+        // Liste : uniquement les notes de la fiche demandée.
+        let notes = lancer(&mut app, "/clients piste notes");
+        assert!(notes.contains("Appelé le matin"), "{notes}");
+        assert!(!notes.contains("Paye en retard"), "{notes}");
+        assert!(notes.contains("local"), "l'auteur est affiché : {notes}");
+        // La fiche montre le journal et son compteur.
+        let fiche = lancer(&mut app, "/clients piste");
+        assert!(fiche.contains("Journal : 1 note"), "{fiche}");
+        // Note vide refusée avec un message actionnable.
+        let texte = lancer(&mut app, "/clients piste note \"\"");
+        assert!(texte.contains("ERREUR"), "{texte}");
+        // Suppression d'une note par son numéro.
+        let id = app.store.notes_client(app.store.clients()[0].id)[0].id;
+        let texte = lancer(&mut app, &format!("/clients piste notes supprimer {id}"));
+        assert!(texte.contains("supprimée"), "{texte}");
+        assert!(lancer(&mut app, "/clients piste notes").contains("Aucune note"));
+        // Bascule de statut en une commande (celle qu'utilise la TUI).
+        let texte = lancer(&mut app, "/clients piste statut client");
+        assert!(texte.contains("statut"), "{texte}");
+        assert!(texte.contains("client"), "{texte}");
+        assert!(!app.store.clients()[0].est_prospect());
+        let texte = lancer(&mut app, "/clients piste statut prospect");
+        assert!(texte.contains("prospect"), "{texte}");
+        assert!(app.store.clients()[0].est_prospect());
+        // Statut inchangé : pas de double conversion dans l'audit.
+        let avant = app.store.audit_complet().len();
+        lancer(&mut app, "/clients piste statut prospect");
+        assert_eq!(app.store.audit_complet().len(), avant);
     }
 
     #[test]

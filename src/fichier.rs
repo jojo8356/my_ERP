@@ -474,6 +474,30 @@ pub fn decoder_client(l: &LigneTable) -> Resultat<Client> {
     })
 }
 
+pub fn encoder_note(n: &Note) -> Resultat<Vec<String>> {
+    Ecrit::pour("notes")?
+        .n("id", n.id)
+        .n("societe_id", n.societe_id)
+        .n("client_id", n.client_id)
+        .t("date_note", &n.date_note)
+        .t("texte", &n.texte)
+        .t("auteur", &n.auteur)
+        .t("cree_le", &n.cree_le)
+        .fin()
+}
+
+pub fn decoder_note(l: &LigneTable) -> Resultat<Note> {
+    Ok(Note {
+        id: l.entier("id"),
+        societe_id: l.entier("societe_id"),
+        client_id: l.entier("client_id"),
+        date_note: l.texte("date_note"),
+        texte: l.texte("texte"),
+        auteur: l.texte("auteur"),
+        cree_le: l.texte("cree_le"),
+    })
+}
+
 pub fn encoder_document(d: &Document) -> Resultat<Vec<String>> {
     Ecrit::pour("documents")?
         .n("id", d.id)

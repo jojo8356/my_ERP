@@ -32,7 +32,7 @@ Zéro GUI, **aucune base de données**. Couleurs : [Chromat](https://github.com/
 (bibliothèque de l’auteur, ADR-004) pilote le CLI via `src/theme.rs` ; la TUI
 utilise **Ratatui + Crossterm** (ADR-005) avec la même palette et des
 **formulaires** pour chaque création/action. Le modèle de données est un schéma
-[**Rustorm**](https://github.com/jojo8356/rustorm) (`rustorm/schema.rsm`, 16 tables)
+[**Rustorm**](https://github.com/jojo8356/rustorm) (`rustorm/schema.rsm`, 17 tables)
 validé **et compilé à chaque build** : le client typé, les colonnes des fichiers
 de données et la future migration PostgreSQL viennent tous du même fichier
 (ADR-006). Aucune connexion n’est ouverte : le stockage local est un moteur
@@ -91,6 +91,13 @@ créent de la même façon, le statut se change ensuite en une commande :
 ./target/release/my-erp /clients piste convertir         # prospect → client
 ./target/release/my-erp /clients piste prospect          # retour en piste
 ```
+
+**Notes datées** : chaque fiche tient un journal (`/clients <nom> note "…"`,
+`/clients <nom> notes`), signé par la session et conservé avec la fiche — c'est
+le suivi commercial, distinct du champ libre `--notes`.
+
+Dans la **TUI** : `c` ouvre l'interrupteur de statut (Espace bascule, Entrée
+valide, état affiché `[●] client / [○] prospect`), `o` ajoute une note.
 
 Un prospect peut recevoir des **devis** ; la **facture** est refusée tant que la
 fiche n'est pas convertie (message qui donne la commande exacte). Filtres :
