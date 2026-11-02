@@ -1418,8 +1418,11 @@ mod tests {
         assert!(peut_modifier(StatutDocument::Brouillon));
         assert!(!peut_modifier(StatutDocument::Valide));
         assert!(!peut_modifier(StatutDocument::Paye));
-        assert_eq!(StatutDocument::PartiellementPaye.depuis_code("partiel"), StatutDocument::PartiellementPaye);
-        assert_eq!(StatutDocument::Envoye.depuis_code("envoye"), StatutDocument::Envoye);
+        let partiel = StatutDocument::PartiellementPaye;
+        assert_eq!(partiel.depuis_code("partiel"), StatutDocument::PartiellementPaye);
+        assert_eq!(partiel.code(), "partiel");
+        let envoye = StatutDocument::Envoye;
+        assert_eq!(envoye.depuis_code("envoye"), StatutDocument::Envoye);
     }
 
     #[test]
