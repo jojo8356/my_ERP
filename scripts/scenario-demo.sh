@@ -4,6 +4,10 @@
 # Requiert le binaire déjà compilé (cargo build) ou utilise `cargo run`.
 set -euo pipefail
 
+# En cas d'échec, la ligne fautive est écrite dans le journal (la CI la remonte
+# en annotation : le journal complet n'est lisible que sur GitHub).
+trap 'echo "✗ échec du scénario à la ligne ${LINENO} : ${BASH_COMMAND}" >&2' ERR
+
 ERP="cargo run --quiet --"
 export ERP_DONNEES_DIR="${ERP_DONNEES_DIR:-donnees}"
 DONNEES="$ERP_DONNEES_DIR"
@@ -12,13 +16,13 @@ mkdir -p "$DONNEES/exports"
 echo "── 0. Identité de l'émetteur (mentions obligatoires, CDC §11.1)"
 $ERP /societe modifier --nom "Atelier Dupont" --siren 123456789 --adresse "1 rue de la Paix" \
   --cp 06000 --ville Nice --email contact@example.fr --forme micro-entreprise >/dev/null
-$ERP /admin mentions | head -4
+$ERP /admin mentions | sed -n '1,4p'
 
 echo "── 1. Création d'un client"
 $ERP /clients nouveau --nom "Atelier Dupont" --type pro --email contact@example.fr --ville Nice
 
 echo "── 2. Facture de maintenance (2 × 500,00 € à 20 %)"
-NUM=$($ERP /factures nouvelle --client dupont --activite services --ligne "Maintenance informatique;2;500,00;2000" | grep -oE "FA-[0-9]{4}-[0-9]{4}" | head -1)
+NUM=$($ERP /factures nouvelle --client dupont --activite services --ligne "Maintenance informatique;2;500,00;2000" | grep -oE "FA-[0-9]{4}-[0-9]{4}" | sed -n '1,1p')
 echo "    facture créée : $NUM"
 
 echo "── 3. Pièces : PDF conforme + e-facture UBL (EN 16931)"
@@ -45,12 +49,12 @@ $ERP /vinted stats | grep "marge nette"
 
 echo "── 8. Comptabilité : seuils micro, FEC, balance, TVA, tableau de bord"
 $ERP /compta seuils | grep "CA global"
-$ERP /compta fec | head -3
+$ERP /compta fec | sed -n '1,3p'
 $ERP /compta fec "$DONNEES/exports/fec.csv" >/dev/null
-$ERP /compta journal | head -4
-$ERP /compta balance | head -5
-$ERP /compta tva | head -5
-$ERP /compta tableau | head -5
+$ERP /compta journal | sed -n '1,4p'
+$ERP /compta balance | sed -n '1,5p'
+$ERP /compta tva | sed -n '1,5p'
+$ERP /compta tableau | sed -n '1,5p'
 
 echo "── 9. Rapprochement bancaire (relevé CSV puis lettrage automatique)"
 printf 'date;libelle;montant\n%s;VIREMENT ATELIER DUPONT;1000,00\n' "$(date +%Y-%m-%d)" > "$DONNEES/exports/releve.csv"
@@ -58,14 +62,14 @@ $ERP /compta rapprocher "$DONNEES/exports/releve.csv" | grep "importée"
 $ERP /compta lettrer | grep "rapproché"
 
 echo "── 10. Devis accepté puis transformé en facture"
-DEVIS=$($ERP /devis nouveau --client dupont --activite services --ligne "Audit;1;300,00;2000" | grep -oE "DEV-[0-9]{4}-[0-9]{4}" | head -1)
+DEVIS=$($ERP /devis nouveau --client dupont --activite services --ligne "Audit;1;300,00;2000" | grep -oE "DEV-[0-9]{4}-[0-9]{4}" | sed -n '1,1p')
 $ERP /devis "$DEVIS" envoyer >/dev/null
 $ERP /devis "$DEVIS" accepter
 $ERP /devis "$DEVIS" transformer | grep "transformé"
 
 echo "── 11. Recherche globale et aide contextuelle"
-$ERP /recherche dupont | head -5
-$ERP /aide factures | head -3
+$ERP /recherche dupont | sed -n '1,5p'
+$ERP /aide factures | sed -n '1,3p'
 
 echo "── 12. Sécurité : admin + 2FA obligatoire, session, journal d'audit chaîné"
 $ERP /utilisateurs nouveau admin --role admin --mot-de-passe "MotDePasse-Local-2026" | grep "Compte"
@@ -73,7 +77,7 @@ $ERP /utilisateurs nouveau admin --role admin --mot-de-passe "MotDePasse-Local-2
 # on récupère un code de secours à usage unique (affiché une seule fois).
 SORTIE_2FA=$($ERP /utilisateurs 2fa admin)
 echo "$SORTIE_2FA" | grep "secret"
-CODE=$(echo "$SORTIE_2FA" | grep -Eo '^[[:space:]]+[0-9a-f]{4}-[0-9a-f]{4}' | head -1 | tr -d ' ')
+CODE=$(echo "$SORTIE_2FA" | grep -Eo '^[[:space:]]+[0-9a-f]{4}-[0-9a-f]{4}' | sed -n '1,1p' | tr -d ' ')
 test -n "$CODE"
 $ERP /auth connexion admin --mot-de-passe "MotDePasse-Local-2026" --totp "$CODE" | grep "Connecté"
 $ERP /auth statut | grep "admin"
@@ -86,12 +90,12 @@ $ERP /devises convertir 100,00 USD 2026-01-15
 
 echo "── 14. Multi-société : création et bascule"
 $ERP /societes nouvelle --nom "Atelier Dupont SARL" --regime reel --ville Nice | grep "créée"
-$ERP /societes | head -3
+$ERP /societes | sed -n '1,3p'
 $ERP /societes basculer "Atelier Dupont" | grep "courante"
 
 echo "── 15. Sauvegarde et persistance sur disque"
 $ERP /admin sauvegarde | grep "sauvegarde"
 test -f "$DONNEES/meta.tsv" && echo "    meta.tsv présent (société courante, session, séquence)"
-test -n "$(ls "$DONNEES"/tables/*.tsv 2>/dev/null | head -1)" && echo "    tables/*.tsv présentes : persistance OK"
-$ERP /admin sante | head -5
+test -n "$(ls "$DONNEES"/tables/*.tsv 2>/dev/null | sed -n '1,1p')" && echo "    tables/*.tsv présentes : persistance OK"
+$ERP /admin sante | sed -n '1,5p'
 echo "✅ Scénario terminé"
