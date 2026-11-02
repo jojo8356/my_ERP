@@ -1,0 +1,27 @@
+name: CI — ERP CLI Rust
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compiler (Chromat Git + Ratatui/Crossterm crates.io, ADR-004/005)
+        run: |
+          set +e
+          cargo build > /tmp/build.log 2>&1; code=$?
+          tail -5 /tmp/build.log; exit $code
+      - name: Tests unitaires et métier
+        run: |
+          set +e
+          cargo test > /tmp/tests.log 2>&1; code=$?
+          tail -5 /tmp/tests.log; exit $code
+      - name: Scénario complet (persistance fichier, process séparés)
+        run: |
+          set +e
+          export ERP_DONNEES_DIR=/tmp/erp-demo
+          bash scripts/scenario-demo.sh > /tmp/scenario.log 2>&1; code=$?
+          tail -30 /tmp/scenario.log; exit $code

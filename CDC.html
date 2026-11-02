@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cahier des charges — ERP CLI Rust (lecture)</title>
+<style>
+:root{--bg:#f4f1ea;--paper:#fffdf8;--ink:#1c1917;--muted:#78716c;--line:#e7e0d2;--accent:#92400e;--accent2:#b45309;--soft:#fdf3e3;--code:#292524;--rad:14px}
+body.dark{--bg:#141210;--paper:#1e1b18;--ink:#e7e5e4;--muted:#a8a29e;--line:#3a352f;--accent:#f59e0b;--accent2:#fbbf24;--soft:#2a2118;--code:#0c0a09}
+*{box-sizing:border-box} html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Georgia,'Iowan Old Style','Times New Roman',serif;line-height:1.75;font-size:18px;transition:background .3s,color .3s}
+#progress{position:fixed;top:0;left:0;height:4px;background:linear-gradient(90deg,var(--accent),var(--accent2));width:0;z-index:50}
+header{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--paper) 88%, transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.hwrap{max-width:1180px;margin:0 auto;padding:10px 20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hwrap .title{font-family:system-ui,sans-serif;font-weight:800;font-size:15px;margin-right:auto}
+button{cursor:pointer;font-family:system-ui,sans-serif;font-size:13.5px;font-weight:600;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:7px 13px}
+button:hover{border-color:var(--accent);color:var(--accent)}
+input[type=search]{font-family:system-ui,sans-serif;font-size:14px;padding:8px 13px;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--ink);min-width:190px}
+.layout{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:250px minmax(0,1fr);gap:34px;padding:28px 20px 80px}
+aside{position:sticky;top:70px;align-self:start;max-height:calc(100vh - 90px);overflow:auto;font-family:system-ui,sans-serif;font-size:13.5px}
+aside h3{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
+aside ul{list-style:none;margin:0;padding:0} aside li{margin:2px 0} aside li li{margin-left:14px;font-size:12.5px}
+aside a{color:var(--ink);text-decoration:none;display:block;padding:3px 8px;border-radius:7px}
+aside a:hover,aside a.active{background:var(--soft);color:var(--accent)}
+article{background:var(--paper);border:1px solid var(--line);border-radius:var(--rad);padding:clamp(22px,4.5vw,52px);box-shadow:0 2px 18px rgba(60,40,10,.05);max-width:820px}
+article h1{font-size:clamp(26px,4vw,38px);line-height:1.25;margin:.1em 0 .4em}
+article h2{font-size:26px;margin:1.7em 0 .5em;padding-bottom:.25em;border-bottom:2px solid var(--soft);scroll-margin-top:80px}
+article h3{font-size:20px;margin:1.4em 0 .4em;scroll-margin-top:80px} article h4{scroll-margin-top:80px}
+article p,article li{color:var(--ink)}
+article a{color:var(--accent)}
+.toc-inline{font-family:system-ui,sans-serif;font-size:15.5px;line-height:1.5}
+.toc-inline ol{margin:.4em 0;padding-left:0;list-style:none}
+.toc-inline li{margin:5px 0}
+.toc-inline a{display:block;text-decoration:none;color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:8px 13px;transition:.15s}
+.toc-inline a:hover{border-color:var(--accent);color:var(--accent);transform:translateX(3px)}
+aside a{cursor:pointer;pointer-events:auto}
+article table{border-collapse:collapse;width:100%;font-size:14.5px;font-family:system-ui,sans-serif;line-height:1.5;margin:1em 0;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top} th{background:var(--soft)}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.86em;background:var(--soft);padding:.1em .35em;border-radius:5px}
+pre{background:var(--code);color:#e7e5e4;padding:16px;border-radius:10px;overflow-x:auto;line-height:1.5}
+pre code{background:none;color:inherit;padding:0}
+blockquote{border-left:4px solid var(--accent);background:var(--soft);margin:1.2em 0;padding:12px 18px;border-radius:0 10px 10px 0}
+hr{border:none;border-top:1px solid var(--line);margin:2.2em 0}
+mark{background:#fde68a;color:#111;border-radius:3px;padding:0 2px} body.dark mark{background:#92600a;color:#fff}
+#toTop{position:fixed;right:18px;bottom:18px;border-radius:50%;width:46px;height:46px;font-size:19px;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+@media(max-width:860px){.layout{grid-template-columns:1fr}aside{position:static;max-height:none;order:2}article{order:1}}
+@media print {#progress,header,#toTop,aside{display:none!important} body{background:#fff;font-size:12pt} article{box-shadow:none;border:none;max-width:none} }
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<header><div class="hwrap">
+  <span class="title">📄 CDC — ERP CLI Rust · v1.1</span>
+  <input type="search" id="q" placeholder="🔎 Rechercher dans le CDC…" oninput="search(this.value.trim())" title="Rechercher (Entrée = résultat suivant)">
+  <span id="count" style="font-family:system-ui;font-size:13px"></span>
+  <button onclick="setFs(-1)" title="Réduire le texte">A−</button>
+  <button onclick="setFs(1)" title="Agrandir le texte">A+</button>
+  <button onclick="toggleDark()" title="Mode sombre / clair">🌙 / ☀️</button>
+  <button onclick="window.print()" title="Imprimer ou enregistrer en PDF">🖨️ PDF</button>
+  <a href="CDC-ERP-CLI.md" download style="font-family:system-ui;font-size:13.5px;font-weight:600;color:inherit;text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:7px 13px">⬇️ .md</a>
+</div></header>
+<div class="layout">
+  <aside><h3>Sommaire</h3><div class="toc">
+<ul>
+<li><a href="#cahier-des-charges-erp-cli-en-rust">CAHIER DES CHARGES — ERP CLI en Rust</a><ul>
+<li><a href="#aller-plus-vite-quopenconcerto-et-dolibarr-sans-aucun-menu">« Aller plus vite qu'OpenConcerto et Dolibarr, sans aucun menu »</a></li>
+<li><a href="#table-des-matieres">Table des matières</a></li>
+<li><a href="#1-contexte-probleme-et-objectifs">1. Contexte, problème et objectifs</a><ul>
+<li><a href="#11-contexte">1.1 Contexte</a></li>
+<li><a href="#12-objectifs-mesurables-les-grandes-entreprises-nacceptent-pas-un-cdc-sans-kpi">1.2 Objectifs mesurables (les grandes entreprises n'acceptent pas un CDC sans KPI)</a></li>
+</ul>
+</li>
+<li><a href="#2-methode-gouvernance-facon-grande-entreprise-adaptee-a-1-personne-ia">2. Méthode &amp; gouvernance (façon grande entreprise, adaptée à 1 personne + IA)</a></li>
+<li><a href="#3-parties-prenantes-et-roles">3. Parties prenantes et rôles</a></li>
+<li><a href="#4-perimetre">4. Périmètre</a><ul>
+<li><a href="#41-dans-le-perimetre-v1-mustshould">4.1 Dans le périmètre v1 (Must/Should)</a></li>
+<li><a href="#42-hors-perimetre-v1-wont-pour-tenir-quelques-semaines">4.2 Hors périmètre v1 (Won't — pour tenir « quelques semaines »)</a></li>
+<li><a href="#43-versions-suivantes-vision">4.3 Versions suivantes (vision)</a></li>
+</ul>
+</li>
+<li><a href="#5-solution-cible-architecture">5. Solution cible &amp; architecture</a><ul>
+<li><a href="#51-stack-arretee-vos-choix-arbitrages">5.1 Stack arrêtée (vos choix + arbitrages)</a></li>
+<li><a href="#52-decoupage-modulaire-un-module-un-dossier-du-core-activabledesactivable-par-societe">5.2 Découpage modulaire (un module = un dossier du core, activable/désactivable par société)</a></li>
+<li><a href="#53-principes-darchitecture-non-negociables">5.3 Principes d'architecture (non négociables)</a></li>
+<li><a href="#54-ecart-assume-par-rapport-a-la-recommandation-automatique">5.4 Écart assumé par rapport à la recommandation automatique</a></li>
+</ul>
+</li>
+<li><a href="#6-parcours-de-navigation-cli-votre-exigence-n1-aller-vite">6. Parcours de navigation CLI — votre exigence n°1 « aller vite »</a><ul>
+<li><a href="#61-navigation-par-chemins-comme-des-url-memorisables">6.1 Navigation par chemins (comme des URL, mémorisables)</a></li>
+<li><a href="#62-raccourcis-mode-interactif-le-plus-de-raccourcis-clavier-intelligents">6.2 Raccourcis (mode interactif) — « le plus de raccourcis clavier intelligents »</a></li>
+<li><a href="#63-sorties-belles-et-agreables-votre-priorite-absolue-traduite-cli">6.3 Sorties « belles et agréables » (votre priorité absolue, traduite CLI)</a></li>
+</ul>
+</li>
+<li><a href="#7-exigences-fonctionnelles-extraits-normatifs-must-v1">7. Exigences fonctionnelles (extraits normatifs — Must = v1)</a><ul>
+<li><a href="#socle">Socle</a></li>
+<li><a href="#module-b-facturation-devis-critique">Module B — Facturation &amp; devis (critique)</a></li>
+<li><a href="#module-a-crm">Module A — CRM</a></li>
+<li><a href="#module-c-comptabilite-finance">Module C — Comptabilité / Finance</a></li>
+<li><a href="#module-d-e-commerce-vinted">Module D — E-commerce / Vinted</a></li>
+</ul>
+</li>
+<li><a href="#8-modele-de-donnees-conceptuel-a-detailler-au-jalon-j1">8. Modèle de données (conceptuel, à détailler au jalon J1)</a></li>
+<li><a href="#9-exigences-non-fonctionnelles-isoiec-250102023-chiffrees-vos-ponderations-entre-parentheses">9. Exigences non fonctionnelles (ISO/IEC 25010:2023, chiffrées — vos pondérations entre parenthèses)</a></li>
+<li><a href="#10-securite-rgpd">10. Sécurité &amp; RGPD</a></li>
+<li><a href="#11-conformite-metier-lois-normes-sources-officielles-verifiees-le-30102026">11. Conformité métier — lois &amp; normes (sources officielles, vérifiées le 30/10/2026)</a><ul>
+<li><a href="#111-facturation-services-informatiques-et-ventes-le-cur-critique">11.1 Facturation (services informatiques et ventes) — le cœur critique</a></li>
+<li><a href="#112-services-informatiques-prestations">11.2 Services informatiques (prestations)</a></li>
+<li><a href="#113-vente-de-vetements-vinted-le-point-juridique-le-plus-sensible">11.3 Vente de vêtements &amp; Vinted — le point juridique le plus sensible</a></li>
+</ul>
+</li>
+<li><a href="#12-integrations">12. Intégrations</a></li>
+<li><a href="#13-migration-reprise-depuis-openconcerto-dolibarr">13. Migration / reprise depuis OpenConcerto &amp; Dolibarr</a></li>
+<li><a href="#14-deploiement-devops-exploitation">14. Déploiement, DevOps, exploitation</a></li>
+<li><a href="#15-strategie-de-test-recette-votre-validation-a-chaque-jalon">15. Stratégie de test &amp; recette (votre validation à chaque jalon)</a></li>
+<li><a href="#16-planning-indicatif-delai-vise-premiere-version-en-quelques-semaines-chaque-jalon-attend-votre-go">16. Planning indicatif (délai visé : première version en quelques semaines) — chaque jalon attend votre GO</a></li>
+<li><a href="#17-budget-tco-budget-minimal">17. Budget &amp; TCO (budget « minimal »)</a></li>
+<li><a href="#18-risques-principaux">18. Risques principaux</a></li>
+<li><a href="#19-criteres-dacceptation-du-projet-le-cdc-est-rempli-si">19. Critères d'acceptation du projet (le CDC est « rempli » si…)</a></li>
+<li><a href="#20-points-ouverts-a-trancher-par-vous-avantpendant-j0-je-ne-coderai-pas-par-dessus-ces-trous">20. Points ouverts — à trancher par vous avant/pendant J0 (je ne coderai pas par-dessus ces trous)</a></li>
+<li><a href="#annexe-a-glossaire-court">Annexe A — Glossaire (court)</a></li>
+<li><a href="#annexe-b-sources-sures-verifiees-le-30102026">Annexe B — Sources (sûres, vérifiées le 30/10/2026)</a></li>
+<li><a href="#annexe-c-tracabilite-principe">Annexe C — Traçabilité (principe)</a></li>
+<li><a href="#21-addendum-du-30102026-vos-reponses-q1q6-integrees">21. Addendum du 30/10/2026 — vos réponses Q1–Q6 intégrées</a><ul>
+<li><a href="#211-q1-micro-entreprise-statut-tranche">21.1 Q1 — Micro-entreprise (statut tranché)</a></li>
+<li><a href="#212-q2-vinted-achat-revente-mode-professionnel-des-la-v1">21.2 Q2 — Vinted = achat-revente (mode professionnel dès la v1)</a></li>
+<li><a href="#213-q3-tva-recherche-pour-vous-clients-pros-et-particuliers">21.3 Q3 — TVA (recherché pour vous, clients pros ET particuliers)</a></li>
+<li><a href="#214-q4-facturation-electronique-open-source-reporte-au-jalon-ui-web-a-votre-demande">21.4 Q4 — Facturation électronique open source (reporté au jalon UI web, à votre demande)</a></li>
+<li><a href="#215-q5-migration-tout-garder-mais-plus-tard">21.5 Q5 — Migration : tout garder, mais plus tard</a></li>
+<li><a href="#216-q6-multi-societes-oui-configure-juste-juridiquement">21.6 Q6 — Multi-sociétés : OUI, configuré juste juridiquement</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</aside>
+  <article><h1 id="cahier-des-charges-erp-cli-en-rust">CAHIER DES CHARGES — ERP CLI en Rust</h1>
+<h3 id="aller-plus-vite-quopenconcerto-et-dolibarr-sans-aucun-menu">« Aller plus vite qu'OpenConcerto et Dolibarr, sans aucun menu »</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Projet</strong></td>
+<td>my_ERP — ERP personnel en ligne de commande (CLI), Rust + PostgreSQL</td>
+</tr>
+<tr>
+<td><strong>Version</strong></td>
+<td>CDC v1.1 — 30 octobre 2026 — <strong>réponses Q1–Q6 intégrées (§21), EN ATTENTE DE VOTRE GO J0</strong></td>
+</tr>
+<tr>
+<td><strong>Commanditaire / seul utilisateur v1</strong></td>
+<td>Vous (TPE, secteur services) — validation exigée à chaque grande étape</td>
+</tr>
+<tr>
+<td><strong>Sources des choix</strong></td>
+<td><code>decisions/mes-choix.json</code> (vos réponses du 30/10/2026)</td>
+</tr>
+<tr>
+<td><strong>Méthode</strong></td>
+<td>CDC construit comme dans les grandes entreprises : modèle <strong>Volere</strong> (exigences fonctionnelles / non-fonctionnelles / contraintes), qualité <strong>ISO/IEC 25010:2023</strong>, priorisation <strong>MoSCoW</strong>, critères d'acceptation <strong>Given/When/Then</strong>, traçabilité exigence → test (voir §2)</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>⚖️ <strong>Règle d'or du document</strong> : vos choix explicites priment. Vous avez imposé <strong>Rust partout et zéro GUI</strong> :
+la recommandation automatique initiale (React/Python) est donc <strong>écartée</strong> et cet écart est acté ici (§5.4).</p>
+</blockquote>
+<hr />
+<h2 id="table-des-matieres">Table des matières</h2>
+<nav class="toc-inline"><ol><li><a href="#1-contexte-probleme-et-objectifs">1. Contexte, problème et objectifs</a></li><li><a href="#2-methode-gouvernance-facon-grande-entreprise-adaptee-a-1-personne-ia">2. Méthode &amp; gouvernance (façon grande entreprise, adaptée à 1 personne + IA)</a></li><li><a href="#3-parties-prenantes-et-roles">3. Parties prenantes et rôles</a></li><li><a href="#4-perimetre">4. Périmètre</a></li><li><a href="#5-solution-cible-architecture">5. Solution cible &amp; architecture</a></li><li><a href="#6-parcours-de-navigation-cli-votre-exigence-n1-aller-vite">6. Parcours de navigation CLI — votre exigence n°1 « aller vite »</a></li><li><a href="#7-exigences-fonctionnelles-extraits-normatifs-must-v1">7. Exigences fonctionnelles (extraits normatifs — Must = v1)</a></li><li><a href="#8-modele-de-donnees-conceptuel-a-detailler-au-jalon-j1">8. Modèle de données (conceptuel, à détailler au jalon J1)</a></li><li><a href="#9-exigences-non-fonctionnelles-isoiec-250102023-chiffrees-vos-ponderations-entre-parentheses">9. Exigences non fonctionnelles (ISO/IEC 25010:2023, chiffrées — vos pondérations entre parenthèses)</a></li><li><a href="#10-securite-rgpd">10. Sécurité &amp; RGPD</a></li><li><a href="#11-conformite-metier-lois-normes-sources-officielles-verifiees-le-30102026">11. Conformité métier — lois &amp; normes (sources officielles, vérifiées le 30/10/2026)</a></li><li><a href="#12-integrations">12. Intégrations</a></li><li><a href="#13-migration-reprise-depuis-openconcerto-dolibarr">13. Migration / reprise depuis OpenConcerto &amp; Dolibarr</a></li><li><a href="#14-deploiement-devops-exploitation">14. Déploiement, DevOps, exploitation</a></li><li><a href="#15-strategie-de-test-recette-votre-validation-a-chaque-jalon">15. Stratégie de test &amp; recette (votre validation à chaque jalon)</a></li><li><a href="#16-planning-indicatif-delai-vise-premiere-version-en-quelques-semaines-chaque-jalon-attend-votre-go">16. Planning indicatif (délai visé : première version en quelques semaines) — chaque jalon attend votre GO</a></li><li><a href="#17-budget-tco-budget-minimal">17. Budget &amp; TCO (budget « minimal »)</a></li><li><a href="#18-risques-principaux">18. Risques principaux</a></li><li><a href="#19-criteres-dacceptation-du-projet-le-cdc-est-rempli-si">19. Critères d'acceptation du projet (le CDC est « rempli » si…)</a></li><li><a href="#20-points-ouverts-a-trancher-par-vous-avantpendant-j0-je-ne-coderai-pas-par-dessus-ces-trous">20. Points ouverts — à trancher par vous avant/pendant J0 (je ne coderai pas par-dessus ces trous)</a></li><li><a href="#annexe-a-glossaire-court">Annexe A — Glossaire (court)</a></li><li><a href="#annexe-b-sources-sures-verifiees-le-30102026">Annexe B — Sources (sûres, vérifiées le 30/10/2026)</a></li><li><a href="#annexe-c-tracabilite-principe">Annexe C — Traçabilité (principe)</a></li><li><a href="#21-addendum-du-30102026-vos-reponses-q1q6-integrees">21. Addendum du 30/10/2026 — vos réponses Q1–Q6 intégrées</a></li></ol></nav>
+<hr />
+<h2 id="1-contexte-probleme-et-objectifs">1. Contexte, problème et objectifs</h2>
+<h3 id="11-contexte">1.1 Contexte</h3>
+<p>TPE de services (&lt; 10 personnes), aujourd'hui sur <strong>OpenConcerto et Dolibarr</strong>. Constat (votre formulation) :
+<em>« pleins de menus, c'est dur d'aller vite »</em>. Vous voulez <strong>d'abord un outil pour vous</strong>, en CLI, durable,
+remplaçant l'ERP existant, utilisable à terme par « tous les employés » (aujourd'hui : 1 utilisateur, ×2 à 3 ans).</p>
+<p>Vos deux activités que l'ERP doit couvrir (déduites de votre demande « règles spécifiques ») :
+1. <strong>Prestations de services informatiques</strong> (facturation de services, TVA sur les encaissements/débits, devis).
+2. <strong>Vente de vêtements, notamment via Vinted</strong> (achat-revente et/ou occasion — régime à trancher, §20).</p>
+<h3 id="12-objectifs-mesurables-les-grandes-entreprises-nacceptent-pas-un-cdc-sans-kpi">1.2 Objectifs mesurables (les grandes entreprises n'acceptent pas un CDC sans KPI)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Objectif</th>
+<th>Mesure cible v1</th>
+<th>Vérifié par</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OBJ-1</td>
+<td>Émettre une facture simple</td>
+<td>≤ 60 s, ≤ 3 commandes depuis l'accueil du CLI</td>
+<td>Test chronométré en recette (§15)</td>
+</tr>
+<tr>
+<td>OBJ-2</td>
+<td>Retrouver un client / une facture</td>
+<td>≤ 5 s via chemin mémorisé ou recherche</td>
+<td>Test chronométré</td>
+</tr>
+<tr>
+<td>OBJ-3</td>
+<td>Zéro navigation dans des menus</td>
+<td>100 % des actions v1 accessibles par chemin direct + raccourci</td>
+<td>Revue de la table des commandes (§6)</td>
+</tr>
+<tr>
+<td>OBJ-4</td>
+<td>Conformité facturation</td>
+<td>100 % des mentions obligatoires présentes (§11.1), numérotation sans trou</td>
+<td>Checklist de recette légale</td>
+</tr>
+<tr>
+<td>OBJ-5</td>
+<td>Aucune perte de données</td>
+<td>Restauration d'une sauvegarde quotidienne réussie en ≤ 30 min</td>
+<td>Test de restauration avant go-live</td>
+</tr>
+<tr>
+<td>OBJ-6</td>
+<td>Traçabilité conformité</td>
+<td>100 % des écritures sensibles journalisées (qui/quoi/quand)</td>
+<td>Revue du journal d'audit</td>
+</tr>
+</tbody>
+</table>
+<h2 id="2-methode-gouvernance-facon-grande-entreprise-adaptee-a-1-personne-ia">2. Méthode &amp; gouvernance (façon grande entreprise, adaptée à 1 personne + IA)</h2>
+<ul>
+<li><strong>Exigences numérotées et traçables</strong> : <code>EF-xxx</code> (fonctionnel), <code>ENF-xxx</code> (non-fonctionnel), <code>SEC-xxx</code>, <code>RGPD-xxx</code>.
+  Chaque exigence « Must » aura au moins un test d'acceptation (§15). C'est la pratique Volere / ISO-IEEE 29148.</li>
+<li><strong>Priorisation MoSCoW</strong> : <strong>M</strong>ust (v1 bloquante), <strong>S</strong>hould (v1 si le délai tient), <strong>C</strong>ould (v1.x), <strong>W</strong>on't (explicitement exclu, §4.2).</li>
+<li><strong>Critères d'acceptation</strong> rédigés en <em>Given/When/Then</em> pour les fonctions critiques (facturation en tête).</li>
+<li><strong>Qualité logicielle</strong> cadrée par <strong>ISO/IEC 25010:2023</strong> (9 caractéristiques) pour les ENF du §9.</li>
+<li><strong>Gouvernance</strong> : vous validez <strong>chaque jalon</strong> (§16) avant que le code du jalon suivant démarre — c'est votre choix « je veux valider chaque grande étape ». Un jalon = démonstration CLI + tests verts + mise à jour de ce CDC si écart.</li>
+<li><strong>Journal de décisions (ADR simplifié)</strong> : tout écart à ce CDC est écrit dans <code>decisions/</code> avant d'être codé.</li>
+</ul>
+<h2 id="3-parties-prenantes-et-roles">3. Parties prenantes et rôles</h2>
+<table>
+<thead>
+<tr>
+<th>Acteur</th>
+<th>Rôle dans le projet</th>
+<th>Droits dans l'outil</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Vous (propriétaire TPE)</td>
+<td>Commanditaire, valideur de chaque jalon, utilisateur principal</td>
+<td><strong>Admin</strong></td>
+</tr>
+<tr>
+<td>Futurs employés (×2 à 3 ans)</td>
+<td>Utilisateurs</td>
+<td><strong>Utilisateur</strong> (périmètre restreint, §10)</td>
+</tr>
+<tr>
+<td>Expert-comptable</td>
+<td>Destinataire des exports (FEC, journaux)</td>
+<td>Aucun accès direct v1 (exports fichiers)</td>
+</tr>
+<tr>
+<td>Clients (services info / acheteurs)</td>
+<td>Reçoivent devis/factures (e-mail/PDF)</td>
+<td>Aucun accès v1</td>
+</tr>
+<tr>
+<td>Plateforme agréée (facturation élec.)</td>
+<td>Achemine les e-factures</td>
+<td>Connecteur (§12), jamais d'accès à la base</td>
+</tr>
+<tr>
+<td>Vinted / Stripe / banque</td>
+<td>Sources de transactions</td>
+<td>Import / connecteurs (§12), identifiants en coffre (§10)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="4-perimetre">4. Périmètre</h2>
+<h3 id="41-dans-le-perimetre-v1-mustshould">4.1 Dans le périmètre v1 (Must/Should)</h3>
+<ul>
+<li><strong>Socle</strong> : CLI Rust rapide (navigation par chemins + raccourcis), multi-sociétés, multi-devises, PostgreSQL, auth + 2FA, rôles simples, journal d'audit, sauvegardes quotidiennes, import/export Excel-CSV.</li>
+<li><strong>Module A — CRM clients</strong> (v1) : fiches clients/prospects, contacts, historique (devis, factures, ventes).</li>
+<li><strong>Module B — Facturation &amp; devis</strong> (v1, <strong>module critique n°1</strong>) : devis → facture, mentions légales FR, TVA, acomptes, avoirs, échéances, relances, PDF, envoi e-mail, préparation facturation électronique.</li>
+<li><strong>Module C — Comptabilité / Finance</strong> (v1) : écritures issues des factures, journaux, TVA collectée/déductible, rapprochement bancaire simple, export expert-comptable (<strong>FEC</strong>).</li>
+<li><strong>Module D — E-commerce / Vinted</strong> (v1) : catalogue vêtements (taille, marque, composition, état, prix d'achat), suivi des ventes Vinted (import CSV/manuel), marge par article, stock simple lié.</li>
+<li><strong>Préparation</strong> (architecture, pas d'écran) : API REST du socle pour la future application mobile ; multi-langue <strong>non</strong> (français uniquement).</li>
+</ul>
+<h3 id="42-hors-perimetre-v1-wont-pour-tenir-quelques-semaines">4.2 Hors périmètre v1 (Won't — pour tenir « quelques semaines »)</h3>
+<p>Sont explicitement <strong>exclus de la v1</strong> :</p>
+<ul>
+<li>❌ <strong>GUI / interface web</strong> (votre contrainte absolue)</li>
+<li>📱 Application mobile (plus tard)</li>
+<li>👥 Paie / RH</li>
+<li>🏭 Production / atelier</li>
+<li>🏬 Multi-dépôts avancé</li>
+<li>✍️ Signature électronique intégrée (Could v1.x)</li>
+<li>🤖 Connecteur Vinted « automatique » par scraping (interdit par les CGU des plateformes — uniquement API officielle si elle existe, ou import CSV, §11.3)</li>
+<li>❌ Devenir soi-même plateforme agréée de facturation électronique (on se connecte à une plateforme agréée existante)</li>
+</ul>
+<h3 id="43-versions-suivantes-vision">4.3 Versions suivantes (vision)</h3>
+<p>v1.x : signature électronique, SMS de relance, rapprochement Stripe automatique. v2 : application mobile (via API REST), module Projets/Tâches complet (souhaité mais hors v1), Ventes/Commandes avancé.</p>
+<h2 id="5-solution-cible-architecture">5. Solution cible &amp; architecture</h2>
+<h3 id="51-stack-arretee-vos-choix-arbitrages">5.1 Stack arrêtée (vos choix + arbitrages)</h3>
+<table>
+<thead>
+<tr>
+<th>Couche</th>
+<th>Choix</th>
+<th>Justification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Langage unique</td>
+<td><strong>Rust</strong> (CLI + cœur + futur serveur)</td>
+<td>Votre contrainte imposée : sécurité mémoire, binaire unique, pas de fuites</td>
+</tr>
+<tr>
+<td>Interface</td>
+<td><strong>CLI Rust</strong> : commandes à chemins type URL, mode interactif (REPL), complétion shell, raccourcis clavier</td>
+<td>Votre exigence « aller vite », zéro GUI</td>
+</tr>
+<tr>
+<td>Architecture</td>
+<td><strong>Monolithe modulaire</strong> : <code>erp-core</code> (métier) + <code>erp-cli</code> (v1) + <code>erp-server</code> REST (préparé, activé pour le mobile)</td>
+<td>Simple à maintenir (votre priorité 5/5), découpable plus tard</td>
+</tr>
+<tr>
+<td>Base de données</td>
+<td><strong>PostgreSQL</strong> (on-premise, serveur interne)</td>
+<td>Votre choix ; n°1 du marché, gratuit, robuste</td>
+</tr>
+<tr>
+<td>API</td>
+<td><strong>REST</strong> (JSON), versionnée <code>/api/v1</code></td>
+<td>Votre choix ; servira au mobile et aux exports</td>
+</tr>
+<tr>
+<td>PDF factures</td>
+<td>Génération PDF côté Rust (template FR conforme)</td>
+<td>Mentions légales §11.1</td>
+</tr>
+<tr>
+<td>Hébergement</td>
+<td><strong>Serveur interne</strong> (on-premise), Linux</td>
+<td>Votre choix ; aucun coût cloud récurrent (budget minimal)</td>
+</tr>
+<tr>
+<td>DevOps</td>
+<td>Docker (PostgreSQL + service), <strong>CI/CD</strong> (tests auto à chaque commit), staging + production</td>
+<td>Votre choix « standard »</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52-decoupage-modulaire-un-module-un-dossier-du-core-activabledesactivable-par-societe">5.2 Découpage modulaire (un module = un dossier du core, activable/désactivable par société)</h3>
+<p><code>core</code> (sociétés, utilisateurs, audit, devises) · <code>crm</code> · <code>facturation</code> · <code>comptabilite</code> · <code>ecommerce</code> (vinted) · (<code>projets</code>, <code>commandes</code> : stubs v2).</p>
+<h3 id="53-principes-darchitecture-non-negociables">5.3 Principes d'architecture (non négociables)</h3>
+<p>Séparation stricte CLI ↔ métier ↔ données (le futur serveur REST réutilise 100 % du métier) · aucune règle de TVA/compta codée « en dur » dans le CLI (tout est dans <code>erp-core</code>, testé unitairement) · montants en <strong>entiers de centimes</strong> (jamais de flottants) · devises ISO 4217 avec taux datés · toutes les dates métier en fuseau <code>Europe/Paris</code> · migrations de base versionnées et réversibles.</p>
+<h3 id="54-ecart-assume-par-rapport-a-la-recommandation-automatique">5.4 Écart assumé par rapport à la recommandation automatique</h3>
+<p>L'artefact recommandait React/Python. <strong>Vous avez imposé Rust + CLI</strong> : cet écart est validé par le présent CDC.
+Conséquence assumée : pas de GUI (ni en v1, ni prévue), l'« esthétique » (votre priorité absolue) se traduit en
+<strong>ergonomie terminal</strong> : sorties alignées, couleurs sobres, aide contextuelle, zéro écran inutile (§6, §9-ENF-ERG).</p>
+<h2 id="6-parcours-de-navigation-cli-votre-exigence-n1-aller-vite">6. Parcours de navigation CLI — votre exigence n°1 « aller vite »</h2>
+<h3 id="61-navigation-par-chemins-comme-des-url-memorisables">6.1 Navigation par chemins (comme des URL, mémorisables)</h3>
+<pre><code>erp /                                  # accueil : tableau de bord texte (impayés, ventes du mois)
+erp /clients                           # liste clients        (alias : erp c)
+erp /clients/dupont                    # fiche client (recherche floue sur le nom)
+erp /clients/dupont/factures           # ses factures
+erp /factures                          # liste factures       (alias : erp f)
+erp /factures/2026/0042                # facture FA-2026-0042 (chemin direct si vous connaissez le numéro)
+erp /factures/nouvelle --client dupont # création guidée minimale (3 questions max)
+erp /devis /compta /vinted /stock      # modules v1
+erp go /clients/dupont/factures        # en mode interactif : navigation sans relancer le binaire
+</code></pre>
+<p>Règles : tout chemin fonctionne en <strong>commande unique</strong> (scriptable) et en <strong>mode interactif</strong> (<code>erp</code> seul ouvre un prompt) ; segments insensibles à la casse ; recherche floue (fautes tolérées) ; <code>..</code> remonte d'un niveau ; <code>erp aide &lt;chemin&gt;</code> (ou <code>?</code>) affiche l'aide <strong>du contexte</strong>.</p>
+<h3 id="62-raccourcis-mode-interactif-le-plus-de-raccourcis-clavier-intelligents">6.2 Raccourcis (mode interactif) — « le plus de raccourcis clavier intelligents »</h3>
+<p>| Raccourci | Action | | Raccourci | Action |
+|---|---|---|---|
+| <code>Ctrl+R</code> | Recherche dans l'historique | | <code>g f</code> / <code>g c</code> / <code>g v</code> | Aller à Factures / Clients / Vinted |
+| <code>Tab</code> | Complétion (chemins, clients, n° de facture) | | <code>n</code> | Nouveau (contexte : facture si on est dans /factures…) |
+| <code>Ctrl+K</code> | Palette de commandes (recherche globale) | | <code>e</code> / <code>Entrée</code> | Ouvrir l'élément sélectionné |
+| <code>/</code> | Recherche globale immédiate | | <code>p</code> | Marquer payé (sur une facture) |
+| <code>q</code> / <code>Échap</code> | Retour / quitter le contexte | | <code>x</code> | Exporter la vue courante (CSV/PDF) |
+| <code>?</code> | Aide contextuelle | | <code>Ctrl+S</code> | Sauvegarder un brouillon en cours |</p>
+<p>Exigences : raccourcis <strong>affichés en permanence</strong> en pied d'écran interactif (1 ligne), personnalisables dans <code>~/.config/erp/raccourcis.toml</code>, aucun raccourci ne déclenche d'action destructive sans confirmation (<code>suppr</code> exige de retaper la référence).</p>
+<h3 id="63-sorties-belles-et-agreables-votre-priorite-absolue-traduite-cli">6.3 Sorties « belles et agréables » (votre priorité absolue, traduite CLI)</h3>
+<p>Tableaux alignés à colonnes fixes, montants alignés à droite avec devise, statuts colorés sobres
+(texte <strong>gras</strong> = impayé en retard, vert = payé — toujours doublés d'un symbole <code>✓/!</code> pour ne pas dépendre que de la couleur),
+pagers intelligents (jamais 500 lignes d'un coup), <code>NO_COLOR</code> respecté, sortie <code>--json</code> sur toute commande (scriptabilité).</p>
+<h2 id="7-exigences-fonctionnelles-extraits-normatifs-must-v1">7. Exigences fonctionnelles (extraits normatifs — Must = v1)</h2>
+<h3 id="socle">Socle</h3>
+<ul>
+<li><strong>EF-SOC-01 (M)</strong> Multi-sociétés : bascule <code>erp /societes/&lt;nom&gt;</code>, données cloisonnées par société, devise par défaut par société.</li>
+<li><strong>EF-SOC-02 (M)</strong> Multi-devises : montants saisis en devise du document, conversion au taux daté, totaux société en devise de référence.</li>
+<li><strong>EF-SOC-03 (M)</strong> Recherche globale (<code>/</code>) sur clients, factures, articles en &lt; 1 s sur le volume cible (&lt; 10 000 lignes/module).</li>
+</ul>
+<h3 id="module-b-facturation-devis-critique">Module B — Facturation &amp; devis (critique)</h3>
+<ul>
+<li><strong>EF-FAC-01 (M)</strong> Devis : création, statuts (brouillon/envoyé/accepté/refusé/expiré), transformation en facture en 1 commande.</li>
+<li><strong>EF-FAC-02 (M)</strong> Facture : <strong>numérotation chronologique continue sans trou</strong> par société et par exercice ; impossible de modifier/supprimer une facture validée (avoir obligatoire pour corriger).
+  <em>Acceptation — Given</em> une facture validée, <em>When</em> je tente de l'éditer, <em>Then</em> le CLI refuse et propose « créer un avoir ».</li>
+<li><strong>EF-FAC-03 (M)</strong> Lignes : désignation, quantité (heures/jours/forfait pour les services ; article pour les vêtements), prix unitaire HT, remise, <strong>taux de TVA par ligne</strong>, totaux HT/TVA/TTC calculés automatiquement.</li>
+<li><strong>EF-FAC-04 (M)</strong> Acomptes et solde, échéance, conditions de paiement, pénalités de retard et indemnité forfaitaire 40 € (B2B) paramétrables.</li>
+<li><strong>EF-FAC-05 (M)</strong> PDF conforme (§11.1) + envoi e-mail en 1 commande (<code>erp /factures/2026/0042 envoyer</code>).</li>
+<li><strong>EF-FAC-06 (M)</strong> Suivi des paiements : impayés, retards, relances (modèles e-mail), <code>p</code> = marquer payé avec date et moyen.</li>
+<li><strong>EF-FAC-07 (S)</strong> Préparation e-facture : export structuré (Factur-X/UBL) et envoi via la plateforme agréée choisie (§11.1, §12).</li>
+<li><strong>EF-FAC-08 (S)</strong> Factures récurrentes (abonnements de maintenance informatique).</li>
+</ul>
+<h3 id="module-a-crm">Module A — CRM</h3>
+<ul>
+<li><strong>EF-CRM-01 (M)</strong> Fiche client : identité complète (SIREN, TVA intracom. si pro), type (particulier/pro/asso), adresses, contacts, notes datées.</li>
+<li><strong>EF-CRM-02 (M)</strong> Historique unifié : devis, factures, paiements, ventes liées, depuis <code>/clients/&lt;nom&gt;</code>.</li>
+<li><strong>EF-CRM-03 (S)</strong> Étiquettes et recherche (ex. <code>clients --tag maintenance</code>), export CSV/Excel.</li>
+</ul>
+<h3 id="module-c-comptabilite-finance">Module C — Comptabilité / Finance</h3>
+<ul>
+<li><strong>EF-CPT-01 (M)</strong> Écritures générées automatiquement depuis factures/paiements (plan comptable FR paramétrable), journaux (ventes, banque, achats).</li>
+<li><strong>EF-CPT-02 (M)</strong> TVA : TVA collectée/déductible par taux et par période, récapitulatif prêt pour la déclaration (services : encaissements ou débits selon régime §11.2).</li>
+<li><strong>EF-CPT-03 (M)</strong> Export <strong>FEC</strong> conforme (format DGFiP) + exports journaux pour l'expert-comptable.</li>
+<li><strong>EF-CPT-04 (S)</strong> Rapprochement bancaire : import relevé (CSV/OFX), lettrage semi-automatique ; <strong>aucune donnée bancaire complète stockée</strong> (tokens/4 derniers chiffres uniquement, SEC-06).</li>
+<li><strong>EF-CPT-05 (S)</strong> Tableau de bord finance : CA par mois/activité (services vs vêtements), encours clients, trésorerie simple.</li>
+</ul>
+<h3 id="module-d-e-commerce-vinted">Module D — E-commerce / Vinted</h3>
+<ul>
+<li><strong>EF-VIN-01 (M)</strong> Article vêtement : photos (liens fichiers), marque, taille, état, <strong>composition textile</strong>, prix et date d'achat, source (achat-revente ou bien personnel), statut (en stock/en ligne/vendu).</li>
+<li><strong>EF-VIN-02 (M)</strong> Vente : prix de vente, frais de plateforme/port, <strong>marge nette calculée</strong>, distinction du régime fiscal par article (§11.3 : personnel exonéré vs achat-revente BIC).</li>
+<li><strong>EF-VIN-03 (M)</strong> Import CSV des ventes (export Vinted / saisie assistée), aucune automatisation contraire aux CGU.</li>
+<li><strong>EF-VIN-04 (S)</strong> Statistiques : rotation du stock, marge par marque/taille, cumul annuel avec <strong>alerte aux seuils DAC7</strong> (30 ventes / 2 000 €, §11.3).</li>
+<li><strong>EF-VIN-05 (C)</strong> Fiche produit exportable (description + composition + taille) prête à coller dans l'annonce.</li>
+</ul>
+<h2 id="8-modele-de-donnees-conceptuel-a-detailler-au-jalon-j1">8. Modèle de données (conceptuel, à détailler au jalon J1)</h2>
+<p>Entités : <code>societe</code> — <code>utilisateur(role)</code> — <code>client(contact)</code> — <code>devis(ligne)</code> — <code>facture(ligne, paiement, avoir)</code> —
+<code>ecriture(journal)</code> — <code>article_vetement(vente_vinted)</code> — <code>produit_service</code> — <code>taux_tva</code> — <code>taux_change</code> — <code>audit_log</code> — <code>sauvegarde</code>.
+Règles : suppression logique (jamais physique) pour tout document comptable ; horodatage <code>créé_le/modifié_le/par</code> partout ;
+index sur numéros de documents et noms clients ; clés étrangères strictes ; contraintes d'unicité sur les numéros de facture.</p>
+<h2 id="9-exigences-non-fonctionnelles-isoiec-250102023-chiffrees-vos-ponderations-entre-parentheses">9. Exigences non fonctionnelles (ISO/IEC 25010:2023, chiffrées — vos pondérations entre parenthèses)</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Caractéristique</th>
+<th>Exigence mesurable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ENF-PERF-01</td>
+<td>Performance (1/5 : modeste)</td>
+<td>Toute commande courante &lt; 500 ms en local sur le volume cible ; démarrage du CLI &lt; 300 ms</td>
+</tr>
+<tr>
+<td>ENF-SIMPL-01</td>
+<td>Maintenabilité (5/5 : <strong>votre max</strong>)</td>
+<td>Binaire unique + PostgreSQL seuls prérequis ; installation = 1 script ; code métier couvert ≥ 80 % par les tests (facturation/compta : 100 % des règles de calcul)</td>
+</tr>
+<tr>
+<td>ENF-ERG-01</td>
+<td>Interaction (4/5)</td>
+<td>OBJ-1/2/3 du §1.2 ; aide contextuelle partout ; messages d'erreur en français, actionnables (« quoi faire » inclus)</td>
+</tr>
+<tr>
+<td>ENF-FIA-01</td>
+<td>Fiabilité</td>
+<td>Aucune écriture comptable à moitié enregistrée (transactions) ; reprise propre après coupure</td>
+</tr>
+<tr>
+<td>ENF-SCAL-01</td>
+<td>Flexibilité (3/5)</td>
+<td>×2 utilisateurs et ×10 lignes sans changement d'architecture ; ajout d'un module sans toucher aux modules existants</td>
+</tr>
+<tr>
+<td>ENF-COMPAT-01</td>
+<td>Compatibilité</td>
+<td>Linux (prod), poste de travail Linux/macOS/Windows (CLI) ; exports CSV/XLSX/PDF/FEC ouverts</td>
+</tr>
+<tr>
+<td>ENF-PORT-01</td>
+<td>Portabilité</td>
+<td>Données intégralement exportables (dump PostgreSQL + CSV) — aucun verrouillage</td>
+</tr>
+<tr>
+<td>ENF-COUT-01</td>
+<td>Coût (0/5 noté, mais budget « minimal »)</td>
+<td>100 % open source, 0 licence, hébergement = serveur déjà possédé (§17)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="10-securite-rgpd">10. Sécurité &amp; RGPD</h2>
+<ul>
+<li><strong>SEC-01 (M)</strong> Mots de passe hachés <strong>Argon2id</strong>, politique de robustesse, aucun secret en clair dans la base ni les journaux.</li>
+<li><strong>SEC-02 (M)</strong> <strong>2FA TOTP</strong> obligatoire pour les comptes admin ; codes de récupération à usage unique.</li>
+<li><strong>SEC-03 (M)</strong> Connexion par <strong>code e-mail / lien magique</strong> en alternative (votre choix) : lien à durée ≤ 15 min, usage unique.</li>
+<li><strong>SEC-04 (M)</strong> Rôles simples : <strong>Admin</strong> (tout) / <strong>Utilisateur</strong> (modules autorisés, pas d'accès paie/finance sensibles — il n'y a pas de paie en v1).</li>
+<li><strong>SEC-05 (M)</strong> <strong>Journal d'audit</strong> infalsifiable en append-only : connexion, création/validation de facture, paiement, export, suppression logique (qui, quoi, quand, avant/après pour les champs sensibles).</li>
+<li><strong>SEC-06 (M)</strong> Données bancaires : <strong>jamais</strong> de numéro de carte/IBAN complet stocké ; uniquement jetons d'API (Stripe) et 4 derniers chiffres ; clés API dans un coffre (variables d'environnement / fichier <code>0600</code>, jamais dans Git).</li>
+<li><strong>SEC-07 (M)</strong> Chiffrement : disque/base chiffrés au repos sur le serveur interne, TLS dès que <code>erp-server</code> est activé, Rust = pas d'erreurs mémoire (unsafe interdit hors justification écrite).</li>
+<li><strong>RGPD-01 (M)</strong> Registre des traitements tenu dans <code>decisions/</code> (finalités, durées) — exigence CNIL de durée définie par finalité.</li>
+<li><strong>RGPD-02 (M)</strong> Durées par défaut proposées (à valider §20) : prospects 3 ans après dernier contact ; clients = durée de la relation puis archivage comptable <strong>10 ans</strong> (pièces justificatives, Code de commerce) ; accès/rectification/effacement/export en 1 commande (<code>erp /clients/&lt;nom&gt; rgpd exporter|effacer</code>) avec réponse sous 1 mois.</li>
+<li><strong>RGPD-03 (M)</strong> Minimisation : aucune donnée client non nécessaire à la facturation/vente n'est demandée par le CLI.</li>
+</ul>
+<h2 id="11-conformite-metier-lois-normes-sources-officielles-verifiees-le-30102026">11. Conformité métier — lois &amp; normes (sources officielles, vérifiées le 30/10/2026)</h2>
+<h3 id="111-facturation-services-informatiques-et-ventes-le-cur-critique">11.1 Facturation (services informatiques et ventes) — le cœur critique</h3>
+<ul>
+<li><strong>Mentions obligatoires</strong> sur chaque facture (CGI ann. II art. 242 nonies A ; C. com. L441-9) : identité complète
+  émetteur (forme juridique, capital, SIREN/SIRET, TVA intracom.) et client, n° unique chronologique, dates d'émission
+  et de prestation, désignation précise (quantité, prix unitaire HT), TVA par taux ou mention
+  <strong>« TVA non applicable, art. 293 B du CGI »</strong> si franchise en base, échéance, pénalités de retard, indemnité forfaitaire 40 €.
+  → implémentées comme un <strong>modèle contrôlé automatiquement</strong> avant validation (EF-FAC-02/05).</li>
+<li><strong>Facturation électronique (réforme en cours, dates officielles economie.gouv.fr)</strong> : depuis le <strong>1er septembre 2026,
+  toute entreprise doit pouvoir RECEVOIR</strong> des e-factures via une <strong>plateforme agréée</strong> ; les TPE/PME devront
+  <strong>ÉMETTRE</strong> au format électronique à partir du <strong>1er septembre 2027</strong> (+ e-reporting). Quatre nouvelles mentions
+  s'ajoutent (SIREN client, nature de l'opération…). <strong>Exigence CDC</strong> : le module Facturation doit être prêt pour
+  l'émission via plateforme agréée <strong>avant l'été 2027</strong> (jalon J6) ; dès la v1, choisir la plateforme et pouvoir recevoir.
+  Un simple PDF envoyé par e-mail ne vaudra plus « facture électronique » au sens de la réforme.</li>
+<li><strong>Comptabilité</strong> : écritures chronologiques, export <strong>FEC</strong> au format normé DGFiP en cas de contrôle,
+  conservation des pièces comptables <strong>10 ans</strong>, numérotation sans rupture (EF-FAC-02, EF-CPT-03).</li>
+</ul>
+<h3 id="112-services-informatiques-prestations">11.2 Services informatiques (prestations)</h3>
+<ul>
+<li>Facture <strong>obligatoire entre professionnels</strong> ; pour un particulier : facture/note dès 25 € TTC ou sur demande.</li>
+<li>TVA prestations de services : <strong>exigible à l'encaissement</strong> par défaut (option possible pour les débits — à trancher §20) ;
+  taux normal 20 % sauf cas particuliers ; prestations UE B2B : autoliquidation avec TVA intracom. du client (EF-FAC-03 doit gérer ces cas).</li>
+<li>Devis : mentions et durée de validité ; le devis accepté vaut engagement — d'où EF-FAC-01 (traçabilité des statuts).</li>
+</ul>
+<h3 id="113-vente-de-vetements-vinted-le-point-juridique-le-plus-sensible">11.3 Vente de vêtements &amp; Vinted — <strong>le point juridique le plus sensible</strong></h3>
+<ul>
+<li><strong>Deux régimes à ne jamais confondre dans l'outil (EF-VIN-02)</strong> :
+  (a) <strong>Biens personnels d'occasion</strong> vendus sans but lucratif → en principe <strong>non imposables, rien à déclarer</strong>, quel que soit le montant ;
+  (b) <strong>Achat (ou fabrication) pour revendre</strong> → <strong>activité commerciale (BIC) dès le premier euro</strong> : immatriculation
+  (micro-entreprise le plus souvent), déclaration du CA, cotisations. Il n'existe <strong>pas de seuil</strong> qui « autorise » l'achat-revente non déclaré.</li>
+<li><strong>DAC7</strong> : Vinted transmet au fisc les vendeurs au-delà de <strong>30 transactions ou 2 000 €/an</strong> — c'est un seuil de
+  <strong>signalement, pas d'imposition</strong> ; l'ERP alerte à l'approche des seuils (EF-VIN-04) et conserve les justificatifs d'achat.</li>
+<li><strong>Si vente en tant que professionnel</strong> (site ou plateformes en mode pro) : information précontractuelle complète,
+  <strong>droit de rétractation 14 jours</strong> en vente à distance aux consommateurs, <strong>garantie légale de conformité
+  (2 ans neuf / au minimum 1 an occasion)</strong>, médiateur de la consommation, prix TTC (guide vendeur DGCCRF).
+  Sur Vinted entre particuliers, ces obligations « pro » ne s'appliquent pas de la même façon — le CDC impose donc
+  de <strong>déclarer par article son régime</strong> (personnel/pro) plutôt que de mélanger les chiffres.</li>
+<li><strong>Étiquetage textile</strong> : composition en fibres <strong>obligatoire</strong> dans l'UE (règlement UE n° 1007/2011, dénominations
+  officielles, % décroissants) — d'où le champ <code>composition</code> obligatoire d'EF-VIN-01 ; l'affichage d'une origine doit être exact.</li>
+<li>⚠️ Ce CDC n'est pas un conseil juridique/fiscal : <strong>faire valider votre régime (§20-Q2) par votre expert-comptable</strong>.</li>
+</ul>
+<h2 id="12-integrations">12. Intégrations</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Intégration</th>
+<th>Mode v1</th>
+<th>Priorité</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>INT-01</td>
+<td>E-mail (envoi devis/factures, codes de connexion, relances)</td>
+<td>SMTP du serveur interne</td>
+<td>M</td>
+</tr>
+<tr>
+<td>INT-02</td>
+<td>Plateforme agréée facturation électronique</td>
+<td>À choisir avant J6 ; réception dès v1</td>
+<td>M (réception) / S (émission)</td>
+</tr>
+<tr>
+<td>INT-03</td>
+<td>Excel / CSV (import clients, articles, ventes Vinted ; exports partout)</td>
+<td>Fichiers locaux</td>
+<td>M</td>
+</tr>
+<tr>
+<td>INT-04</td>
+<td>Stripe (liens de paiement sur factures, suivi)</td>
+<td>API, jetons en coffre</td>
+<td>S</td>
+</tr>
+<tr>
+<td>INT-05</td>
+<td>Banque (relevés CSV/OFX pour rapprochement)</td>
+<td>Import fichier</td>
+<td>S</td>
+</tr>
+<tr>
+<td>INT-06</td>
+<td>Signature électronique (devis)</td>
+<td>Prestataire externe</td>
+<td>C (v1.x)</td>
+</tr>
+<tr>
+<td>INT-07</td>
+<td>SMS / notifications (relances)</td>
+<td>Prestataire externe</td>
+<td>C (v1.x)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="13-migration-reprise-depuis-openconcerto-dolibarr">13. Migration / reprise depuis OpenConcerto &amp; Dolibarr</h2>
+<p>Inventaire à J0 (ce qui existe réellement : clients, factures ouvertes, articles) → exports CSV des deux outils →
+scripts d'import <strong>rejouables</strong> avec rapport d'écarts (doublons clients, trous de numérotation signalés, jamais corrigés en silence) →
+bascule : les anciennes factures restent en lecture seule importées ; la nouvelle numérotation démarre proprement.
+<em>Règle : aucune donnée historique n'est écrasée ; tout import est journalisé (SEC-05).</em></p>
+<h2 id="14-deploiement-devops-exploitation">14. Déploiement, DevOps, exploitation</h2>
+<p>Serveur interne Linux : PostgreSQL + (plus tard) <code>erp-server</code> en Docker, CLI sur votre poste. Environnements <strong>staging + production</strong> (vos choix) ; CI : <code>cargo test</code> + lints à chaque commit, pas de merge si rouge. <strong>Sauvegarde quotidienne</strong> automatisée (dump chiffré, rétention 30 j + 1 copie hors du serveur), <strong>test de restauration à chaque jalon</strong>. Mises à jour : binaire versionné, migrations de base automatiques et réversibles, procédure de retour arrière documentée. Supervision minimale : <code>erp /admin/sante</code> (base, espace disque, dernière sauvegarde).</p>
+<h2 id="15-strategie-de-test-recette-votre-validation-a-chaque-jalon">15. Stratégie de test &amp; recette (votre validation à chaque jalon)</h2>
+<ol>
+<li><strong>Tests unitaires</strong> : 100 % des règles de calcul (TVA, totaux, marge Vinted, numérotation) — <code>erp-core</code> uniquement.</li>
+<li><strong>Tests d'intégration</strong> : parcours complets sur base de test (devis→facture→paiement→écriture→FEC).</li>
+<li><strong>Recette par jalon (UAT)</strong> : vous exécutez un <strong>scénario écrit</strong> fourni avec chaque livrable (ex. « créer le client X,
+   facturer 2 h de maintenance, marquer payé, vérifier l'écriture et le PDF ») + les chronométrages OBJ-1/OBJ-2.</li>
+<li><strong>Recette conformité</strong> avant go-live : checklist §11 (mentions facture, FEC généré et lisible, export RGPD, restauration de sauvegarde).</li>
+<li>Critère de sortie : 0 anomalie bloquante, anomalies mineures listées et acceptées par écrit par vous.</li>
+</ol>
+<h2 id="16-planning-indicatif-delai-vise-premiere-version-en-quelques-semaines-chaque-jalon-attend-votre-go">16. Planning indicatif (délai visé : première version en quelques semaines) — <strong>chaque jalon attend votre GO</strong></h2>
+<table>
+<thead>
+<tr>
+<th>Jalon</th>
+<th>Contenu</th>
+<th>Livrable à valider</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>J0</strong> — Cadrage</td>
+<td>Validation du présent CDC, réponses au §20, inventaire migration</td>
+<td>Ce document signé (GO/NO-GO)</td>
+</tr>
+<tr>
+<td><strong>J1</strong> — Socle CLI</td>
+<td>Navigation par chemins, raccourcis, sociétés/devises, PostgreSQL, audit, sauvegarde</td>
+<td>Démo : OBJ-2 et OBJ-3 mesurés</td>
+</tr>
+<tr>
+<td><strong>J2</strong> — CRM + Facturation</td>
+<td>Devis/factures/avoirs/PDF/e-mail (module critique d'abord)</td>
+<td>Scénario recette facturation complet</td>
+</tr>
+<tr>
+<td><strong>J3</strong> — Comptabilité</td>
+<td>Écritures, TVA, FEC, tableau de bord</td>
+<td>FEC de test validé (outil DGFiP)</td>
+</tr>
+<tr>
+<td><strong>J4</strong> — Vinted</td>
+<td>Articles, ventes, marges, alertes DAC7, import CSV</td>
+<td>Import de vos ventes réelles</td>
+</tr>
+<tr>
+<td><strong>J5</strong> — Durcissement</td>
+<td>2FA, rôles, recette conformité §11/§10, restauration testée, migration Dolibarr/OpenConcerto</td>
+<td>Checklist conformité signée → <strong>mise en production</strong></td>
+</tr>
+<tr>
+<td><strong>J6</strong> — Avant 09/2027</td>
+<td>Émission e-factures via plateforme agréée</td>
+<td>Premières e-factures émises/reçues</td>
+</tr>
+</tbody>
+</table>
+<h2 id="17-budget-tco-budget-minimal">17. Budget &amp; TCO (budget « minimal »)</h2>
+<p>Développement : vous + assistant IA (pas de licence). Logiciels : 100 % open source (Rust, PostgreSQL) = <strong>0 €</strong>.
+Hébergement : serveur interne existant = <strong>0 € récurrent</strong>. Coûts externes possibles : plateforme agréée
+facturation électronique (souvent quelques €/mois ou incluse chez l'expert-comptable), nom de domaine/SMTP si besoin,
+prestataires signature/SMS seulement en v1.x. TCO 3 ans estimé : <strong>quasi nul hors temps de développement</strong> — conforme à votre pondération (coût noté 0/5 mais budget déclaré minimal : le CDC retient le moins cher <em>à maintenance égale</em>, cf. simplicité 5/5).</p>
+<h2 id="18-risques-principaux">18. Risques principaux</h2>
+<table>
+<thead>
+<tr>
+<th>Risque</th>
+<th>Impact</th>
+<th>Parade dans ce CDC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Vous êtes seul (bus factor = 1)</td>
+<td>Maintenance bloquée</td>
+<td>Simplicité 5/5, doc en français, binaire unique, exports ouverts (ENF-PORT-01)</td>
+</tr>
+<tr>
+<td>Rust : développement plus lent qu'un langage « rapide »</td>
+<td>Délai « quelques semaines » tendu</td>
+<td>Périmètre v1 strict (§4.2), modules Should/Could décalables sans toucher au Must</td>
+</tr>
+<tr>
+<td>Régime Vinted mal identifié (perso vs pro)</td>
+<td>Redressement fiscal</td>
+<td>Régime par article (EF-VIN-02), validation expert-comptable (§20-Q2)</td>
+</tr>
+<tr>
+<td>Échéance e-facture 2027 ratée</td>
+<td>Factures non conformes</td>
+<td>J6 dédié, plateforme choisie dès J2</td>
+</tr>
+<tr>
+<td>Perte du serveur interne</td>
+<td>Perte de données</td>
+<td>Sauvegarde quotidienne + copie externe + test de restauration à chaque jalon</td>
+</tr>
+<tr>
+<td>Périmètre qui gonfle (projets, commandes…)</td>
+<td>Jamais livré</td>
+<td>Won't list §4.2 ; tout ajout = avenant écrit au CDC</td>
+</tr>
+</tbody>
+</table>
+<h2 id="19-criteres-dacceptation-du-projet-le-cdc-est-rempli-si">19. Critères d'acceptation du projet (le CDC est « rempli » si…)</h2>
+<p>✅ OBJ-1 à OBJ-6 mesurés et atteints en recette · ✅ 100 % des exigences Must livrées et testées ·
+✅ checklist conformité §11 validée avec l'expert-comptable · ✅ restauration de sauvegarde démontrée ·
+✅ migration des données ouvertes effectuée sans perte · ✅ documentation d'installation/exploitation en français livrée.</p>
+<h2 id="20-points-ouverts-a-trancher-par-vous-avantpendant-j0-je-ne-coderai-pas-par-dessus-ces-trous">20. Points ouverts — <strong>à trancher par vous avant/pendant J0</strong> (je ne coderai pas par-dessus ces trous)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Question</th>
+<th>Pourquoi c'est bloquant</th>
+<th>Options</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>#</td>
+<td>Question</td>
+<td>Statut</td>
+<td></td>
+</tr>
+<tr>
+<td>---</td>
+<td>---</td>
+<td>---</td>
+<td></td>
+</tr>
+<tr>
+<td>Q1</td>
+<td>Statut juridique &amp; TVA</td>
+<td>✅ <strong>Tranché : micro-entreprise</strong> (§21.1)</td>
+<td></td>
+</tr>
+<tr>
+<td>Q2</td>
+<td>Vinted : personnel ou achat-revente</td>
+<td>✅ <strong>Tranché : achat-revente</strong> (§21.2)</td>
+<td></td>
+</tr>
+<tr>
+<td>Q3</td>
+<td>TVA encaissement/débits, clients pros/particuliers</td>
+<td>✅ <strong>Tranché après recherche : franchise en base tant qu'éligible, sinon encaissements</strong> (§21.3)</td>
+<td></td>
+</tr>
+<tr>
+<td>Q4</td>
+<td>Plateforme agréée e-factures (open source)</td>
+<td>🕓 <strong>Reporté au jalon UI web</strong>, shortlist open source (§21.4)</td>
+<td></td>
+</tr>
+<tr>
+<td>Q5</td>
+<td>Reprise des données</td>
+<td>✅ <strong>Exhaustive visée, outil reporté hors v1</strong> (§21.5)</td>
+<td></td>
+</tr>
+<tr>
+<td>Q6</td>
+<td>Multi-sociétés en v1</td>
+<td>✅ <strong>Oui</strong> — 1 micro légale, 2 activités séparées (§21.6)</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="annexe-a-glossaire-court">Annexe A — Glossaire (court)</h2>
+<p><strong>FEC</strong> fichier des écritures comptables (format DGFiP) · <strong>PDP/plateforme agréée</strong> intermédiaire immatriculé pour les e-factures ·
+<strong>DAC7</strong> directive UE obligeant les plateformes à signaler les vendeurs (30 ventes ou 2 000 €/an) · <strong>BIC</strong> bénéfices industriels et commerciaux ·
+<strong>MoSCoW</strong> priorisation Must/Should/Could/Won't · <strong>UAT/recette</strong> validation par l'utilisateur final · <strong>TCO</strong> coût total sur la durée de vie.</p>
+<h2 id="annexe-b-sources-sures-verifiees-le-30102026">Annexe B — Sources (sûres, vérifiées le 30/10/2026)</h2>
+<ul>
+<li>Micro-entreprise, activités mixtes et seuils (régime micro 203 100 € / 83 600 € ; franchise en base TVA 37 500 € / 85 000 € en 2026) : entreprendre.service-public.fr (F23267) et synthèses conformes au CGI art. 50-0 et 293 B.</li>
+<li>TVA des prestations de services (exigibilité à l'encaissement par défaut, option débits possible, biens à la livraison) : CGI art. 269 et guides fiscaux concordants.</li>
+<li>Écosystème facturation électronique open source (Odoo, Axelor parmi les plateformes agréées DGFiP) : comparateurs du registre DGFiP, octobre 2026 — à revalider au choix définitif.</li>
+<li>Facturation électronique, calendrier officiel (réception 01/09/2026 toutes entreprises ; émission TPE/PME 01/09/2027, plateforme agréée, nouvelles mentions) : economie.gouv.fr — « Tout savoir sur la facturation électronique pour les entreprises ».</li>
+<li>Mentions obligatoires des factures de prestation de service (CGI 242 nonies A, pénalités, indemnité 40 €) : guides conformes au CGI/Code de commerce (Fiducial ; L-Expert-Comptable).</li>
+<li>FEC et contrôles (format normé, art. A.47 AA-1 LPF) : service-public.fr (F34418).</li>
+<li>RGPD (durées par finalité, droits, réponse sous 1 mois) : cnil.fr.</li>
+<li>Vente de vêtements / Vinted (occasionnel non imposable, achat-revente = BIC, signalement DAC7 30 ventes/2 000 € = signalement ≠ imposition) : service-public.fr / DGFiP repris par la presse spécialisée ; frontière pro = achat en vue de revendre, activité habituelle.</li>
+<li>Vente à distance professionnelle (rétractation 14 j, garantie de conformité 2 ans neuf / ≥ 1 an occasion, médiation) : DGCCRF, « Guide du vendeur e-commerce » (economie.gouv.fr).</li>
+<li>Étiquetage textile (composition obligatoire, règlement UE n° 1007/2011) : synthèse conforme DGCCRF/UE.</li>
+<li>Méthode CDC : modèle d'exigences Volere ; ISO/IEC 25010:2023 (9 caractéristiques qualité) pour les exigences non fonctionnelles.</li>
+</ul>
+<h2 id="annexe-c-tracabilite-principe">Annexe C — Traçabilité (principe)</h2>
+<p>Chaque exigence <code>EF/ENF/SEC/RGPD/INT</code> de ce CDC sera reprise dans le dépôt avec : statut, jalon (§16), test associé, date de validation par vous. La matrice complète est générée au démarrage de J1.</p>
+<h2 id="21-addendum-du-30102026-vos-reponses-q1q6-integrees">21. Addendum du 30/10/2026 — vos réponses Q1–Q6 intégrées</h2>
+<h3 id="211-q1-micro-entreprise-statut-tranche">21.1 Q1 — Micro-entreprise (statut tranché)</h3>
+<p>Une seule micro-entreprise (un seul SIREN/SIRET : on ne peut pas cumuler deux micro-entreprises), avec
+<strong>activité mixte</strong> : ventes de marchandises (achat-revente vêtements) + prestations de services informatiques.
+Conséquences pour l'ERP : (a) suivi du chiffre d'affaires <strong>séparé par activité</strong> avec les seuils 2026
+(activité mixte : CA global ≤ 203 100 € dont ≤ 83 600 € de prestations de services — seuils du régime micro) ;
+(b) mentions de facture du régime micro (§11.1) ; (c) tableau de bord « distance aux seuils » (nouvelle exigence
+<strong>EF-CPT-06 (S)</strong> : <code>erp /compta/seuils</code> affiche CA ventes, CA services, % des seuils micro et franchise TVA).</p>
+<h3 id="212-q2-vinted-achat-revente-mode-professionnel-des-la-v1">21.2 Q2 — Vinted = achat-revente (mode professionnel dès la v1)</h3>
+<p>EF-VIN-02 s'applique en mode <strong>pro BIC</strong> : chaque article a un prix d'achat, la marge est calculée nette de frais,
+les recettes alimentent le CA « ventes » de la micro-entreprise, alertes DAC7 (30 ventes / 2 000 €) activées par défaut.
+Le mode « biens personnels » reste possible par article (utile si vous vendez un jour vos propres affaires), mais
+<strong>le défaut est PRO</strong>. À valider avec l'expert-comptable : immatriculation et catégorie déclarative exactes.</p>
+<h3 id="213-q3-tva-recherche-pour-vous-clients-pros-et-particuliers">21.3 Q3 — TVA (recherché pour vous, clients pros ET particuliers)</h3>
+<ul>
+<li><strong>En micro-entreprise, tant que vous restez sous les seuils de franchise en base</strong> (2026 : 37 500 € de CA services /
+  85 000 € de CA ventes, seuils majorés 41 250 € / 93 500 €), vous ne facturez <strong>pas de TVA</strong> : mention obligatoire
+  « TVA non applicable, art. 293 B du CGI ». Le débat encaissement/débits ne se pose donc pas aujourd'hui.</li>
+<li><strong>Si vous devenez redevable de la TVA</strong> (dépassement ou option), la règle légale par défaut est :
+  prestations de services = <strong>TVA exigible à l'encaissement</strong> (vous ne reversez que la TVA réellement encaissée —
+  le plus favorable pour votre trésorerie, surtout avec des particuliers qui ne récupèrent pas la TVA) ;
+  ventes de biens = exigible à la <strong>livraison</strong>. L'option « débits » (TVA dès la facture) n'a d'intérêt que si vos
+  clients pros veulent déduire leur TVA avant de vous payer : <strong>non retenue par défaut</strong>.</li>
+<li><strong>Exigence ERP</strong> : le moteur de TVA gère dès la v1 les deux mondes — mode <em>franchise</em> (0 %) et mode <em>TVA</em>
+  (taux par ligne, exigibilité différenciée services/biens, bascule documentée si franchissement de seuil),
+  et les deux clientèles : particulier (prix TTC affichés, facture sur demande/≥ 25 €) et pro (facture obligatoire,
+  TVA intracom. et autoliquidation UE si applicable).</li>
+</ul>
+<h3 id="214-q4-facturation-electronique-open-source-reporte-au-jalon-ui-web-a-votre-demande">21.4 Q4 — Facturation électronique open source (reporté au jalon UI web, à votre demande)</h3>
+<p>Décision différée, mais l'architecture la rend indolore : l'ERP génère les formats structurés (<strong>Factur-X / UBL / CII</strong>)
+et transmet via un <strong>connecteur interchangeable</strong> (<code>INT-02</code>) — le choix de la plateforme se fera quand vous ferez l'UI web,
+sans toucher au module Facturation. Pistes open source relevées (registre DGFiP évolutif, <strong>à revalider au moment du choix</strong>) :
+<strong>Odoo</strong> et <strong>Axelor</strong>, ERP open source figurant parmi les plateformes agréées, ou un connecteur API vers une plateforme
+agréée distincte si vous préférez garder cet ERP-ci. Rappel des échéances : réception déjà obligatoire (depuis le
+01/09/2026, donc à couvrir dès qu'un connecteur est branché), émission pour les micro/TPE au 01/09/2027.</p>
+<h3 id="215-q5-migration-tout-garder-mais-plus-tard">21.5 Q5 — Migration : tout garder, mais plus tard</h3>
+<p>Objectif acté : reprise <strong>exhaustive</strong> (clients, historique, articles, pièces) « afin de ne rien perdre ».
+L'<strong>outil de migration sort du périmètre v1</strong> (reporté) ; en contrepartie, la v1 garantit : modèle de données complet,
+exports ouverts totaux (ENF-PORT-01) et identifiants d'origine conservables, pour que la migration future soit
+un simple import sans perte. Le §13 s'appliquera le jour venu (imports rejouables, rapport d'écarts).</p>
+<h3 id="216-q6-multi-societes-oui-configure-juste-juridiquement">21.6 Q6 — Multi-sociétés : OUI, configuré juste juridiquement</h3>
+<p>La fonction multi-sociétés (EF-SOC-01) est <strong>activée dès la v1</strong>. Configuration initiale conforme à votre statut :
+<strong>1 société légale (votre micro-entreprise) avec 2 activités analytiques</strong> — « Services informatiques » et
+« Achat-revente vêtements » — chacune avec ses séries de factures, son CA et ses seuils (§21.1), devises gérées
+(EF-SOC-02). Si vous créez un jour une vraie seconde société, le même mécanisme l'accueillera sans refonte.</p>
+<p><em>Fin du CDC v1.1 — prochaine et dernière action avant code : votre <strong>GO explicite sur le J0</strong> (ou vos corrections). Ensuite J1 (socle CLI), validé par vous avant J2.</em></p>
+  <hr><p style="font-family:system-ui;font-size:13px;color:var(--muted)">Version générée depuis <code>CDC-ERP-CLI.md</code> — vos choix : <code>decisions/mes-choix.json</code>. Prochaine action : votre <strong>GO J0</strong> (ou vos corrections).</p></article>
+</div>
+<button id="toTop" onclick="scrollTo({top:0,behavior:'smooth'})" title="Retour en haut">↑</button>
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+// Barre de progression de lecture
+addEventListener('scroll',()=>{const h=document.documentElement;const p=h.scrollTop/(h.scrollHeight-h.clientHeight)*100;$('#progress').style.width=p+'%';
+ // section active dans le sommaire
+ let cur='';$$('article h2,article h3').forEach(x=>{if(x.getBoundingClientRect().top<120)cur=x.id});
+ $$('aside a').forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+cur));},{passive:true});
+// Sommaire cliquable : défilement doux + décalage sous la barre fixe, pour TOUS les liens d'ancre
+$$('a[href^="#"]').forEach(a=>a.addEventListener('click',e=>{const t=document.getElementById(a.getAttribute('href').slice(1));if(t){e.preventDefault();t.scrollIntoView({behavior:'smooth',block:'start'});history.replaceState(null,'',a.getAttribute('href'))}}));
+// Mode sombre / clair (mémorisé)
+const dark=localStorage.getItem('cdc_dark')==='1'; if(dark)document.body.classList.add('dark');
+function toggleDark(){document.body.classList.toggle('dark');localStorage.setItem('cdc_dark',document.body.classList.contains('dark')?'1':'0')}
+// Taille du texte (mémorisée)
+let fs=parseInt(localStorage.getItem('cdc_fs')||'18'); function setFs(d){fs=Math.min(23,Math.max(14,fs+d));document.body.style.fontSize=fs+'px';localStorage.setItem('cdc_fs',fs)} setFs(0);
+// Recherche : surligne les occurrences, Entrée = suivante
+let marks=[],mi=0;
+function search(q){marks.forEach(m=>{const p=m.parentNode;p.replaceChild(document.createTextNode(m.textContent),m);p.normalize()});marks=[];mi=0;
+ if(!q||q.length<3){$('#count').textContent='';return}
+ const walker=document.createTreeWalker($('article'),NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentNode.closest('pre,script,style')||!n.nodeValue.toLowerCase().includes(q.toLowerCase())?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
+ const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+ nodes.forEach(n=>{const i=n.nodeValue.toLowerCase().indexOf(q.toLowerCase());const r=document.createRange();r.setStart(n,i);r.setEnd(n,i+q.length);const m=document.createElement('mark');r.surroundContents(m);marks.push(m)});
+ $('#count').textContent=marks.length?marks.length+' résultat(s) — Entrée pour naviguer':'aucun résultat'; if(marks.length)marks[0].scrollIntoView({block:'center'})}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.activeElement.id==='q'&&marks.length){e.preventDefault();mi=(mi+1)%marks.length;marks[mi].scrollIntoView({block:'center',behavior:'smooth'})}});
+</script>
+</body>
+</html>
