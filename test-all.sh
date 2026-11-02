@@ -35,7 +35,7 @@ VERBEUX=0
 RAPIDE=0
 GARDER=0
 BASE_URL="${ERP_DATABASE_URL:-}"
-FEATURES_SUPPLÉMENTAIRES=""
+FEATURES_EN_PLUS=""
 LOGS="$(mktemp -d "${TMPDIR:-/tmp}/erp-tests-XXXXXX")"
 DONNEES_TEST="$(mktemp -d "${TMPDIR:-/tmp}/erp-donnees-XXXXXX")"
 
@@ -48,7 +48,8 @@ fi
 
 # ---------------------------------------------------------------- Aide
 usage() {
-  sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'
+  # Tout le bloc de commentaires d'en-tête, sans les « # ».
+  sed -n '2,/^set -uo/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -58,8 +59,8 @@ while [ $# -gt 0 ]; do
       BASE_URL="${2:-}"; shift 2 ;;
     --bdd=*|--base=*) BASE_URL="${1#*=}"; shift ;;
     --sans-bdd) BASE_URL=""; shift ;;
-    --features) FEATURES_SUPPLÉMENTAIRES="${2:-}"; shift 2 ;;
-    --features=*) FEATURES_SUPPLÉMENTAIRES="${1#*=}"; shift ;;
+    --features) FEATURES_EN_PLUS="${2:-}"; shift 2 ;;
+    --features=*) FEATURES_EN_PLUS="${1#*=}"; shift ;;
     --rapide) RAPIDE=1; shift ;;
     -v|--verbose) VERBEUX=1; shift ;;
     --garder) GARDER=1; shift ;;
@@ -159,7 +160,7 @@ etape_environnement() {
   printf '  rustfmt     : %s\n' "$(command -v rustfmt >/dev/null 2>&1 && echo présent || echo absent)" >&2
   printf '  clippy      : %s\n' "$(cargo clippy --version >/dev/null 2>&1 && echo présent || echo absent)" >&2
   printf '  base visée  : %s\n' "${BASE_URL:-aucune (mode fichiers)}" >&2
-  [ -n "$FEATURES_SUPPLÉMENTAIRES" ] && printf '  features    : %s\n' "$FEATURES_SUPPLÉMENTAIRES" >&2
+  [ -n "$FEATURES_EN_PLUS" ] && printf '  features    : %s\n' "$FEATURES_EN_PLUS" >&2
   return $ok
 }
 
@@ -251,7 +252,7 @@ etape_statique() {
 # =============================================================================
 etape_compilation() {
   local features_arg=()
-  [ -n "$FEATURES_SUPPLÉMENTAIRES" ] && features_arg=(--features "$FEATURES_SUPPLÉMENTAIRES")
+  [ -n "$FEATURES_EN_PLUS" ] && features_arg=(--features "$FEATURES_EN_PLUS")
   executer "compilation" cargo build --all-targets ${features_arg[@]+"${features_arg[@]}"} || return 1
   BIN="$RACINE/target/debug/my-erp"
   verifier "binaire produit : target/debug/my-erp" test -x "$BIN" || return 1

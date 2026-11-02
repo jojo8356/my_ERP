@@ -15,7 +15,13 @@ jobs:
         run: |
           set +e
           bash test-all.sh --rapide > /tmp/test-all.log 2>&1; code=$?
-          tail -60 /tmp/test-all.log; exit $code
+          tail -60 /tmp/test-all.log
+          if [ $code -ne 0 ]; then
+            # Les journaux d'actions ne sont pas lisibles hors GitHub : le
+            # résumé et la fin de la sortie partent en annotation.
+            python3 -c "import sys; d=open('/tmp/test-all.log',encoding='utf-8',errors='replace').read()[-6000:]; print('::error::'+d.replace('%','%25').replace('\n','%0A'))"
+          fi
+          exit $code
       - name: Diagnostic (erreurs et échecs de test dans l'onglet Annotations)
         if: failure()
         run: |
@@ -69,7 +75,11 @@ jobs:
         run: |
           set +e
           bash test-all.sh --features postgres --bdd "$ERP_DATABASE_URL" > /tmp/test-all-pg.log 2>&1; code=$?
-          tail -80 /tmp/test-all-pg.log; exit $code
+          tail -80 /tmp/test-all-pg.log
+          if [ $code -ne 0 ]; then
+            python3 -c "import sys; d=open('/tmp/test-all-pg.log',encoding='utf-8',errors='replace').read()[-6000:]; print('::error::'+d.replace('%','%25').replace('\n','%0A'))"
+          fi
+          exit $code
       - name: Diagnostic PostgreSQL
         if: failure()
         run: |
