@@ -3575,7 +3575,7 @@ mod tests {
         assert!(json.trim().starts_with('['));
         assert!(json.contains("Atelier Dupont"));
         let csv = lancer(&mut app, "/clients --csv");
-        assert!(csv.starts_with("id;nom;type"), "{csv}");
+        assert!(csv.starts_with("id;nom;statut;type"), "{csv}");
         let texte = lancer(&mut app, "/recherche dupont");
         assert!(texte.contains("1 résultat"), "{texte}");
         let texte = lancer(&mut app, "/recherche introuvablexyz");
@@ -3820,7 +3820,7 @@ mod tests {
             &mut app,
             "/devis nouvelle --client piste --ligne \"Étude;1;500,00\"",
         );
-        assert!(texte.contains("Devis"), "{texte}");
+        assert!(texte.contains("devis DEV-"), "{texte}");
         let numero = app
             .store
             .documents(Some(TypeDocument::Devis))[0]
@@ -3846,7 +3846,7 @@ mod tests {
             &mut app,
             "/factures nouvelle --client piste --ligne \"Étude;1;100,00\"",
         );
-        assert!(texte.contains("Facture"), "{texte}");
+        assert!(texte.contains("facture FA-"), "{texte}");
         let texte = lancer(&mut app, &format!("/devis {numero} transformer"));
         assert!(!texte.contains("ERREUR"), "{texte}");
         assert!(texte.contains("transformed") || texte.contains("transformé"), "{texte}");
