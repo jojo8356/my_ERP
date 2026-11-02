@@ -67,9 +67,16 @@ echo "── 11. Recherche globale et aide contextuelle"
 $ERP /recherche dupont | head -5
 $ERP /aide factures | head -3
 
-echo "── 12. Sécurité : comptes, sessions et journal d'audit chaîné"
-$ERP /utilisateurs nouveau comptable --role utilisateur --mot-de-passe "MotDePasse-Local-2026" | grep "Compte"
-$ERP /auth connexion comptable --mot-de-passe "MotDePasse-Local-2026" | grep "Connecté"
+echo "── 12. Sécurité : admin + 2FA obligatoire, session, journal d'audit chaîné"
+$ERP /utilisateurs nouveau admin --role admin --mot-de-passe "MotDePasse-Local-2026" | grep "Compte"
+# SEC-02 : la 2FA est obligatoire pour un administrateur. On active le TOTP et
+# on récupère un code de secours à usage unique (affiché une seule fois).
+SORTIE_2FA=$($ERP /utilisateurs 2fa admin)
+echo "$SORTIE_2FA" | grep "secret"
+CODE=$(echo "$SORTIE_2FA" | grep -Eo '^[[:space:]]+[0-9a-f]{4}-[0-9a-f]{4}' | head -1 | tr -d ' ')
+test -n "$CODE"
+$ERP /auth connexion admin --mot-de-passe "MotDePasse-Local-2026" --totp "$CODE" | grep "Connecté"
+$ERP /auth statut | grep "admin"
 $ERP /admin audit --verifier | grep "aucune altération"
 $ERP /auth deconnexion >/dev/null
 
