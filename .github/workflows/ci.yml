@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compiler (Chromat Git + Ratatui/Crossterm crates.io, ADR-004/005)
+      - name: Compiler (Chromat + Rustorm Git, Ratatui/Crossterm crates.io, ADR-004/005/006)
         run: |
           set +e
           cargo build > /tmp/build.log 2>&1; code=$?
@@ -25,3 +25,22 @@ jobs:
           export ERP_DONNEES_DIR=/tmp/erp-demo
           bash scripts/scenario-demo.sh > /tmp/scenario.log 2>&1; code=$?
           tail -30 /tmp/scenario.log; exit $code
+      - name: Diagnostic (erreurs de compilation visibles dans l'onglet Annotations)
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import os
+          for chemin in ("/tmp/build.log", "/tmp/tests.log", "/tmp/scenario.log"):
+              if not os.path.exists(chemin):
+                  continue
+              lignes = open(chemin, encoding="utf-8", errors="replace").read().splitlines()
+              print(f"::group::{chemin} ({len(lignes)} lignes)")
+              for i, ligne in enumerate(lignes):
+                  if ligne.startswith("error") or " panicked at " in ligne:
+                      for extra in [ligne] + lignes[i + 1:i + 4]:
+                          if extra.strip():
+                              print("::error::" + extra.replace("%", "%25"))
+                      print("::endgroup::")
+                      print(f"::group::{chemin} (suite)")
+              print("::endgroup::")
+          PY
