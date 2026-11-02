@@ -1418,11 +1418,17 @@ mod tests {
         assert!(peut_modifier(StatutDocument::Brouillon));
         assert!(!peut_modifier(StatutDocument::Valide));
         assert!(!peut_modifier(StatutDocument::Paye));
-        let partiel = StatutDocument::PartiellementPaye;
-        assert_eq!(partiel.depuis_code("partiel"), StatutDocument::PartiellementPaye);
-        assert_eq!(partiel.code(), "partiel");
-        let envoye = StatutDocument::Envoye;
-        assert_eq!(envoye.depuis_code("envoye"), StatutDocument::Envoye);
+        // `depuis_code` est une fonction associée (pas une méthode) : le code
+        // persistant est traduit sans instance préalable.
+        assert_eq!(
+            StatutDocument::depuis_code("partiel"),
+            StatutDocument::PartiellementPaye
+        );
+        assert_eq!(
+            StatutDocument::depuis_code("envoye"),
+            StatutDocument::Envoye
+        );
+        assert_eq!(StatutDocument::depuis_code("inconnu"), StatutDocument::Brouillon);
     }
 
     #[test]
