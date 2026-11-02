@@ -37,7 +37,9 @@ pub const ONGLETS: [(&str, &str); 8] = [
     ("Factures", "/factures"),
     ("Avoirs", "/avoirs"),
     ("Vinted", "/vinted"),
-    ("Compta", "/compta"),
+    // `/compta` seul demande un sous-chemin : l'onglet ouvre le tableau de bord
+    // financier, qui est l'écran utile au quotidien (EF-CPT-05).
+    ("Compta", "/compta tableau"),
     ("Société", "/societes"),
 ];
 
@@ -333,6 +335,7 @@ impl Vue {
             || commande.starts_with("/factures")
             || commande.starts_with("/avoirs")
             || commande.starts_with("/vinted")
+            || commande.starts_with("/compta")
         {
             commande.push_str(" --lignes 500");
         }
@@ -899,6 +902,17 @@ mod tests {
         assert!(vue.lignes.iter().any(|l| l.contains("Zébulon")), "{:?}", vue.lignes);
         let apres = app.store.audit_complet().len();
         assert_eq!(avant, apres, "la navigation ne doit rien journaliser");
+    }
+
+    #[test]
+    fn l_onglet_compta_affiche_le_tableau_financier() {
+        let mut app = App::memoire();
+        let mut vue = Vue::nouvelle();
+        vue.onglet = 6; // Compta
+        vue.rafraichir(&mut app);
+        let texte = vue.lignes.join("\n");
+        assert!(texte.contains("Tableau de bord finance"), "{texte}");
+        assert!(!texte.contains("usage"), "{texte}");
     }
 
     #[test]
