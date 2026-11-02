@@ -94,7 +94,7 @@ $ERP /societes | sed -n '1,3p'
 $ERP /societes basculer "Atelier Dupont" | grep "courante"
 
 echo "── 15. Sauvegarde et persistance sur disque"
-$ERP /admin sauvegarde | grep "sauvegarde"
+$ERP /admin sauvegarde | grep -i "sauvegarde"
 test -f "$DONNEES/meta.tsv" && echo "    meta.tsv présent (société courante, session, séquence)"
 test -n "$(ls "$DONNEES"/tables/*.tsv 2>/dev/null | sed -n '1,1p')" && echo "    tables/*.tsv présentes : persistance OK"
 $ERP /admin sante | sed -n '1,5p'
