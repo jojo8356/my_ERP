@@ -1795,10 +1795,11 @@ impl App {
                     .ok_or("usage : /vinted statut <n° article> en_stock|en_ligne|vendu")?
                     .parse()
                     .map_err(|_| "identifiant d'article illisible".to_string())?;
-                let statut = statut_article(
-                    rest.get(2)
-                        .ok_or("précisez le statut : en_stock | en_ligne | vendu")?,
-                )?;
+                if rest.len() < 3 {
+                    return Err("précisez le statut : en_stock | en_ligne | vendu".into());
+                }
+                // `en ligne` sans guillemets arrive en deux jetons : on recolle.
+                let statut = statut_article(&rest[2..].join(" "))?;
                 let mut article = self.store.article_par_id(id)?;
                 article.statut = statut.to_string();
                 let article = self.store.modifier_article(article)?;
