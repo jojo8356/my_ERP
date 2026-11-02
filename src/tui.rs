@@ -222,7 +222,9 @@ impl Formulaire {
                 if champ.obligatoire {
                     return Err(format!("« {} » est obligatoire — {}", champ.libelle, champ.indice));
                 }
-                // Champ facultatif vide : on retire son option et sa valeur.
+                // Champ facultatif vide : on retire son option et sa valeur,
+                // avec ou sans guillemets dans le modèle.
+                ligne = ligne.replace(&format!(" --{} \"{jeton}\"", champ.cle), "");
                 ligne = ligne.replace(&format!(" --{} {jeton}", champ.cle), "");
                 ligne = ligne.replace(&format!(" {jeton}"), "");
                 continue;
