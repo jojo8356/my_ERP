@@ -87,7 +87,7 @@ $ERP /devises convertir 100,00 USD 2026-01-15
 echo "── 14. Multi-société : création et bascule"
 $ERP /societes nouvelle --nom "Atelier Dupont SARL" --regime reel --ville Nice | grep "créée"
 $ERP /societes | head -3
-$ERP /societes basculer "Ma micro-entreprise" | grep "courante"
+$ERP /societes basculer "Atelier Dupont" | grep "courante"
 
 echo "── 15. Sauvegarde et persistance sur disque"
 $ERP /admin sauvegarde | grep "sauvegarde"
