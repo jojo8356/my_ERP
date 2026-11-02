@@ -1016,7 +1016,7 @@ impl App {
         );
         match fichier {
             Some(chemin) => {
-                std::fs::write(chemin, &contenu)
+                std::fs::write(&chemin, &contenu)
                     .map_err(|e| format!("écriture de {chemin} : {e}"))?;
                 ecrire(
                     sortie,
@@ -2002,7 +2002,7 @@ impl App {
         );
         match fichier {
             Some(chemin) => {
-                std::fs::write(chemin, &contenu)
+                std::fs::write(&chemin, &contenu)
                     .map_err(|e| format!("écriture de {chemin} : {e}"))?;
                 ecrire(
                     sortie,
@@ -2026,7 +2026,7 @@ impl App {
                 let lignes = compta::fec(&ecritures);
                 match rest.get(1) {
                     Some(fichier) => {
-                        std::fs::write(fichier.as_str(), lignes.join("\n") + "\n")
+                        std::fs::write(*fichier, lignes.join("\n") + "\n")
                             .map_err(|e| format!("écriture du FEC : {e}"))?;
                         ecrire(
                             sortie,

@@ -509,6 +509,33 @@ impl Store {
         id
     }
 
+    /// Nombre de lignes par table du schéma, dans l'ordre du modèle Rustorm.
+    ///
+    /// Sert à `/admin sante` : on voit d'un coup d'œil quelles tables existent
+    /// réellement et lesquelles sont vides, sans ouvrir un seul fichier.
+    pub fn compteurs(&self) -> Vec<(&'static str, usize)> {
+        vec![
+            ("societes", self.societes.len()),
+            ("utilisateurs", self.utilisateurs.len()),
+            ("clients", self.clients.len()),
+            ("documents", self.documents.len()),
+            (
+                "lignes",
+                self.documents.iter().map(|d| d.lignes.len()).sum::<usize>(),
+            ),
+            ("paiements", self.paiements.len()),
+            ("ecritures", self.ecritures.len()),
+            ("articles", self.articles.len()),
+            ("ventes", self.ventes.len()),
+            ("taux_change", self.taux.len()),
+            ("operations_bancaires", self.operations.len()),
+            ("audit_log", self.audit.len()),
+            ("sequences", self.sequences.len()),
+            ("sauvegardes", self.sauvegardes.len()),
+            ("recurrences", self.recurrences.len()),
+        ]
+    }
+
     // ---------------------------------------------------------- Sociétés
 
     pub fn societes(&self) -> Vec<Societe> {
