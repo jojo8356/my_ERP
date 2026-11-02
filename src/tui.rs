@@ -1,1226 +1,921 @@
-//! Interface TUI Ratatui + Crossterm (ADR-005) — plein écran dans le
-//! terminal, toujours aucune GUI (CDC §6). Chromat reste la référence
-//! couleurs du projet : la TUI applique la palette RGB définie dans
-//! `theme.rs` aux styles Ratatui ; sélection surlignée blanc 20 % en gras.
+//! Interface plein écran (TUI) — Ratatui + Crossterm (ADR-005).
 //!
-//! Lancement : `my-erp tui`
-//! Touches : Tab module · ↑↓ naviguer · f formulaires · n nouveau (selon le
-//! module) · d devis · p payer · v valider · Entrée vendre (Vinted) · ? aide
-//! Dans un formulaire : Tab/↑↓ champ suivant/précédent · ←→ choix d'une
-//! liste · Entrée champ suivant (ou enregistrer sur le dernier champ) ·
-//! Ctrl+S enregistrer · Échap annuler.
+//! La TUI n'a **aucune règle métier propre** : chaque écran est une commande
+//! du CLI rendue dans un cadre. Elle appelle [`App::apercu`] en lecture seule
+//! pour afficher (aucune écriture, aucun journal d'audit pollué par la
+//! navigation) et [`App::executer`] pour les actions — ce que fait un
+//! formulaire n'est rien d'autre que composer une ligne de commande, ce qui
+//! garantit que la TUI et le CLI ne peuvent pas diverger (CDC §6, ENF-ERG-02).
+//!
+//! Raccourcis affichés en permanence en pied d'écran (CDC §6.2) :
+//! `←→` onglets · `↑↓` défilement · `n` nouveau · `p` paiement · `s` recherche
+//! · `r` rafraîchir · `?` aide · `q` quitter. Aucune action destructive n'est
+//! accessible sans passer par la commande explicite (le CLI demande la
+//! référence), donc aucune ne peut être déclenchée par une touche seule.
 
-use crate::domain::*;
-use crate::store::*;
+use crate::cli::{tokeniser, App};
 use crate::theme;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::{execute, ExecutableCommand};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
+use crossterm::execute;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::text::{Line as TxtLine, Span};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
-use std::io::{self, Stdout};
+use std::io::Stdout;
+use std::time::Duration;
 
-pub const MODULES: [&str; 5] = ["Tableau de bord", "Clients", "Factures", "Vinted", "Comptabilité"];
-
-/// Libellés du menu des formulaires, ouvert depuis n'importe où par `f`.
-pub const CHOIX_FORMULAIRES: [&str; 7] = [
-    "Nouveau client",
-    "Nouvelle facture",
-    "Nouveau devis",
-    "Nouvel article Vinted",
-    "Vendre un article Vinted…",
-    "Régime TVA de la société",
-    "Exporter le FEC…",
+/// Un onglet = un chemin du CLI. L'ordre suit le parcours quotidien.
+pub const ONGLETS: [(&str, &str); 8] = [
+    ("Tableau de bord", "/"),
+    ("Clients", "/clients"),
+    ("Devis", "/devis"),
+    ("Factures", "/factures"),
+    ("Avoirs", "/avoirs"),
+    ("Vinted", "/vinted"),
+    ("Compta", "/compta"),
+    ("Société", "/societes"),
 ];
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct VueTui {
-    pub module: usize,
-    pub selection: usize,
-    pub aide: bool,
-    pub menu_formulaires: bool,
-    pub choix_menu: usize,
-    pub formulaire: Option<Formulaire>,
-    pub message: String,
-}
+/// Ligne de raccourcis affichée en permanence (CDC §6.2).
+pub const RACCOURCIS: &str =
+    "←→ onglets · ↑↓ défiler · n nouveau · p paiement · s recherche · r rafraîchir · ? aide · q quitter";
 
-impl Default for VueTui {
-    fn default() -> Self {
-        Self {
-            module: 0,
-            selection: 0,
-            aide: false,
-            menu_formulaires: false,
-            choix_menu: 0,
-            formulaire: None,
-            message: "Tab = module · f = formulaires · n = nouveau · ? = aide · q = quitter".to_string(),
-        }
-    }
-}
+// ------------------------------------------------------------------ Formulaire
 
-/// Données affichables d'un module. Les collections servent à relier la
-/// ligne sélectionnée à l'objet métier concerné par les actions/formulaires.
-pub struct ContenuModule {
-    pub lignes: Vec<String>,
-    pub factures: Vec<Document>,
-    pub clients: Vec<Client>,
-    pub articles: Vec<Article>,
-}
-
-impl ContenuModule {
-    fn vide(lignes: Vec<String>) -> Self {
-        Self { lignes, factures: Vec::new(), clients: Vec::new(), articles: Vec::new() }
-    }
-}
-
-pub fn charger_contenu(store: &mut dyn Store, module: usize) -> Result<ContenuModule, String> {
-    let regime = store.societe()?.regime;
-    match module {
-        0 => {
-            let annee = annee_de(&aujourdhui());
-            let (ventes, services) = store.ca_annuel(annee)?;
-            let etat = etat_seuils(ventes, services, SEUILS_2026);
-            let mut lignes = vec![
-                format!("CA ventes {annee}   : {}", format_eur(ventes)),
-                format!("CA services {annee} : {}", format_eur(services)),
-                format!("CA global          : {}", format_eur(ventes + services)),
-            ];
-            for a in &etat.alertes {
-                lignes.push(format!("⚠ {a}"));
-            }
-            let impayes = store
-                .documents(Some(TypeDocument::Facture))?
-                .into_iter()
-                .filter(|d| matches!(d.statut, StatutDocument::Valide | StatutDocument::PartiellementPaye))
-                .count();
-            lignes.push(format!("Factures en attente de paiement : {impayes}"));
-            lignes.push(String::new());
-            lignes.push("Formulaires : f (tous) · n (régime TVA société depuis ce module)".to_string());
-            Ok(ContenuModule::vide(lignes))
-        }
-        1 => {
-            let clients = store.clients()?;
-            let lignes = clients
-                .iter()
-                .map(|c| format!("{:>4}  {:<30} {:<14} {}", c.id, c.nom, c.type_client.as_str(), c.email))
-                .collect();
-            Ok(ContenuModule { lignes, factures: Vec::new(), clients, articles: Vec::new() })
-        }
-        2 => {
-            let factures = store.documents(Some(TypeDocument::Facture))?;
-            let lignes = factures
-                .iter()
-                .map(|d| {
-                    let t = d.totaux(regime);
-                    format!(
-                        "{} {:<14} {}  TTC {:>12}  payé {:>12}  ({})",
-                        d.statut.symbole(),
-                        d.numero,
-                        d.date_doc,
-                        format_eur(t.ttc),
-                        format_eur(d.paye),
-                        d.statut.as_str()
-                    )
-                })
-                .collect();
-            Ok(ContenuModule { lignes, factures, clients: Vec::new(), articles: Vec::new() })
-        }
-        3 => {
-            let articles = store.articles()?;
-            let mut lignes: Vec<String> = articles
-                .iter()
-                .map(|a| format!("{:>4}  {:<14} {:<26} taille {:<4} achat {:>10}  [{}]", a.id, a.marque, a.description, a.taille, format_eur(a.prix_achat), a.statut))
-                .collect();
-            let ventes = store.ventes()?;
-            let marge: Cents = ventes
-                .iter()
-                .map(|v| store.article_par_id(v.article_id).map(|a| marge_nette(&a, v)).unwrap_or(0))
-                .sum();
-            lignes.push(String::new());
-            lignes.push(format!("Ventes : {} · marge nette cumulée : {}", ventes.len(), format_eur(marge)));
-            Ok(ContenuModule { lignes, factures: Vec::new(), clients: Vec::new(), articles })
-        }
-        _ => {
-            let annee = annee_de(&aujourdhui());
-            let (ventes, services) = store.ca_annuel(annee)?;
-            let e = etat_seuils(ventes, services, SEUILS_2026);
-            let mut lignes = vec![
-                format!("Micro-entreprise — activité mixte ({annee})"),
-                format!("  CA ventes   : {}  (franchise TVA dès {})", format_eur(e.ca_ventes), format_eur(SEUILS_2026.franchise_tva_ventes)),
-                format!("  CA services : {}  (plafond services {})", format_eur(e.ca_services), format_eur(SEUILS_2026.ca_services_max)),
-                format!("  CA global   : {}  (plafond global {})", format_eur(e.ca_ventes + e.ca_services), format_eur(SEUILS_2026.ca_global_max)),
-            ];
-            if e.alertes.is_empty() {
-                lignes.push("  ✓ Aucune alerte de seuil".to_string());
-            }
-            for a in &e.alertes {
-                lignes.push(format!("  ⚠ {a}"));
-            }
-            lignes.push(String::new());
-            lignes.push("Formulaires : n ou x = export FEC · s = régime TVA société".to_string());
-            Ok(ContenuModule::vide(lignes))
-        }
-    }
-}
-
-// ---------------------------------------------------------------- Formulaires
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum TypeFormulaire {
-    Client,
-    Document(TypeDocument),
-    Paiement,
-    Article,
-    Vente,
-    Societe,
-    ExportFec,
-}
-
-#[derive(Debug, Clone, PartialEq)]
+/// Un champ de saisie. `cle` sert d'identifiant dans le modèle de commande.
+#[derive(Debug, Clone)]
 pub struct Champ {
-    pub nom: &'static str,
+    pub cle: &'static str,
+    pub libelle: &'static str,
     pub valeur: String,
-    /// Non vide pour un champ à choix (←/→ pour changer, saisie ignorée).
-    pub options: &'static [&'static str],
+    pub obligatoire: bool,
+    pub indice: &'static str,
 }
 
 impl Champ {
-    fn texte(nom: &'static str, defaut: impl Into<String>) -> Self {
-        Self { nom, valeur: defaut.into(), options: &[] }
+    pub fn new(
+        cle: &'static str,
+        libelle: &'static str,
+        obligatoire: bool,
+        indice: &'static str,
+    ) -> Self {
+        Self {
+            cle,
+            libelle,
+            valeur: String::new(),
+            obligatoire,
+            indice,
+        }
     }
-    fn choix(nom: &'static str, options: &'static [&'static str], defaut: &str) -> Self {
-        Self { nom, valeur: defaut.to_string(), options }
+
+    /// Valeur nettoyée : les guillemets sont retirés (ils casseraient le
+    /// découpage de la ligne de commande), les espaces de bord aussi.
+    pub fn propre(&self) -> String {
+        self.valeur
+            .replace('"', "")
+            .trim()
+            .to_string()
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// Formulaire = modèle de ligne de commande + champs.
+///
+/// `modele` contient des jetons `{cle}` remplacés par la saisie. Après
+/// remplacement, un `{…}` restant signale un champ obligatoire vide : le
+/// message d'erreur nomme alors le champ, en français.
+#[derive(Debug, Clone)]
 pub struct Formulaire {
-    pub type_form: TypeFormulaire,
-    pub titre: String,
+    pub titre: &'static str,
+    pub modele: &'static str,
     pub champs: Vec<Champ>,
-    pub actif: usize,
+    pub focus: usize,
     pub erreur: Option<String>,
-    /// Contexte invisible : facture à payer / article à vendre.
-    pub numero_document: String,
-    pub article_id: i64,
 }
 
 impl Formulaire {
+    pub fn nouveau(titre: &'static str, modele: &'static str, champs: Vec<Champ>) -> Self {
+        Self {
+            titre,
+            modele,
+            champs,
+            focus: 0,
+            erreur: None,
+        }
+    }
+
+    /// Formulaire de création de client (EF-CRM-01).
     pub fn client() -> Self {
-        Self {
-            type_form: TypeFormulaire::Client,
-            titre: "Nouveau client".to_string(),
-            champs: vec![
-                Champ::texte("Nom *", ""),
-                Champ::choix("Type", &["pro", "particulier"], "pro"),
-                Champ::texte("E-mail", ""),
-                Champ::texte("Téléphone", ""),
-                Champ::texte("Adresse", ""),
-                Champ::texte("SIREN", ""),
-                Champ::texte("TVA intracommunautaire", ""),
-                Champ::texte("Notes", ""),
+        Self::nouveau(
+            "Nouveau client",
+            "/clients nouveau --nom \"{nom}\" --type {type} --email \"{email}\" --ville \"{ville}\"",
+            vec![
+                Champ::new("nom", "Nom", true, "raison sociale ou nom+prénom"),
+                Champ::new("type", "Type", true, "particulier | professionnel | association"),
+                Champ::new("email", "E-mail", false, "facultatif, sert à l'envoi"),
+                Champ::new("ville", "Ville", false, "facultatif"),
             ],
-            actif: 0,
-            erreur: None,
-            numero_document: String::new(),
-            article_id: 0,
-        }
+        )
     }
 
-    pub fn document(type_doc: TypeDocument) -> Self {
-        let titre = if type_doc == TypeDocument::Devis { "Nouveau devis" } else { "Nouvelle facture" };
-        Self {
-            type_form: TypeFormulaire::Document(type_doc),
-            titre: titre.to_string(),
-            champs: vec![
-                Champ::texte("Client (nom ou e-mail) *", ""),
-                Champ::choix("Activité", &["services", "ventes"], "services"),
-                Champ::texte("Date", aujourdhui()),
-                Champ::texte("Échéance (AAAA-MM-JJ)", ""),
-                Champ::texte("Désignation *", ""),
-                Champ::texte("Quantité", "1"),
-                Champ::texte("Prix unitaire HT (€)", ""),
-                Champ::texte("TVA (points de base, 2000 = 20 %)", "2000"),
+    /// Formulaire de création de document (devis ou facture).
+    pub fn document(type_doc: &str) -> Self {
+        let titre = if type_doc == "devis" {
+            "Nouveau devis"
+        } else {
+            "Nouvelle facture"
+        };
+        Self::nouveau(
+            titre,
+            if type_doc == "devis" {
+                "/devis nouveau --client \"{client}\" --activite {activite} --ligne \"{ligne}\""
+            } else {
+                "/factures nouveau --client \"{client}\" --activite {activite} --ligne \"{ligne}\""
+            },
+            vec![
+                Champ::new("client", "Client", true, "nom, e-mail ou n°"),
+                Champ::new(
+                    "activite",
+                    "Activité",
+                    true,
+                    "services (BNC) | ventes (BIC)",
+                ),
+                Champ::new(
+                    "ligne",
+                    "Ligne",
+                    true,
+                    "désignation;quantité;prix HT (ex. Prestation;1;750,00)",
+                ),
             ],
-            actif: 0,
-            erreur: None,
-            numero_document: String::new(),
-            article_id: 0,
-        }
+        )
     }
 
-    pub fn paiement(document: &Document, reste: Cents) -> Self {
-        Self {
-            type_form: TypeFormulaire::Paiement,
-            titre: format!("Payer {}", document.numero),
-            champs: vec![
-                Champ::texte("Montant (€)", format_eur(reste)),
-                Champ::texte("Date", aujourdhui()),
-                Champ::choix("Moyen", &["virement", "carte", "espèces", "chèque", "autre"], "virement"),
+    /// Formulaire d'enregistrement de paiement (EF-FAC-06).
+    pub fn paiement() -> Self {
+        Self::nouveau(
+            "Enregistrer un paiement",
+            "/factures {numero} payer {montant} {date} {moyen}",
+            vec![
+                Champ::new("numero", "Facture", true, "FA-2026-0001 ou 2026/0001"),
+                Champ::new("montant", "Montant", true, "vide = solde restant"),
+                Champ::new("date", "Date", false, "vide = aujourd'hui"),
+                Champ::new("moyen", "Moyen", false, "virement | cb | espèces | chèque"),
             ],
-            actif: 0,
-            erreur: None,
-            numero_document: document.numero.clone(),
-            article_id: 0,
-        }
+        )
     }
 
+    /// Formulaire d'ajout d'article Vinted (EF-VIN-01).
     pub fn article() -> Self {
-        Self {
-            type_form: TypeFormulaire::Article,
-            titre: "Nouvel article Vinted".to_string(),
-            champs: vec![
-                Champ::texte("Marque *", ""),
-                Champ::texte("Description *", ""),
-                Champ::texte("Taille", ""),
-                Champ::texte("Composition textile *", ""),
-                Champ::choix("État", &["très bon", "bon", "correct", "à réparer"], "très bon"),
-                Champ::texte("Prix d'achat (€)", ""),
-                Champ::texte("Date d'achat", aujourdhui()),
+        Self::nouveau(
+            "Nouvel article Vinted",
+            "/vinted nouveau --marque \"{marque}\" --description \"{description}\" \
+             --taille {taille} --composition \"{composition}\" --prix-achat {prix_achat}",
+            vec![
+                Champ::new("marque", "Marque", true, "ex. Patagonia"),
+                Champ::new("description", "Description", true, "ex. Veste polaire"),
+                Champ::new("taille", "Taille", false, "ex. M"),
+                Champ::new(
+                    "composition",
+                    "Composition",
+                    true,
+                    "obligatoire (UE 1007/2011), ex. 100 % polyester",
+                ),
+                Champ::new("prix_achat", "Prix d'achat", true, "ex. 12,00"),
             ],
-            actif: 0,
-            erreur: None,
-            numero_document: String::new(),
-            article_id: 0,
-        }
+        )
     }
 
-    pub fn vente(article: &Article) -> Self {
-        Self {
-            type_form: TypeFormulaire::Vente,
-            titre: format!("Vendre : {} {}", article.marque, article.description),
-            champs: vec![
-                Champ::texte("Prix de vente (€) *", ""),
-                Champ::texte("Frais plateforme/port (€)", "0"),
-                Champ::texte("Date de vente", aujourdhui()),
-                Champ::texte("Plateforme", "Vinted"),
+    /// Formulaire de vente d'un article (EF-VIN-02).
+    pub fn vente() -> Self {
+        Self::nouveau(
+            "Vendre un article",
+            "/vinted vendre {article} --prix {prix} --frais {frais}",
+            vec![
+                Champ::new("article", "N° article", true, "visible dans /vinted"),
+                Champ::new("prix", "Prix de vente", true, "ex. 45,00"),
+                Champ::new("frais", "Frais Vinted", false, "vide = 0,00"),
             ],
-            actif: 0,
-            erreur: None,
-            numero_document: String::new(),
-            article_id: article.id,
+        )
+    }
+
+    /// Formulaire de recherche globale (EF-SOC-03).
+    pub fn recherche() -> Self {
+        Self::nouveau(
+            "Recherche globale",
+            "/recherche {texte}",
+            vec![Champ::new("texte", "Texte", true, "client, facture, article, vente")],
+        )
+    }
+
+    /// Ligne de commande équivalente à la saisie (vide si un champ
+    /// obligatoire manque — le message nomme le libellé, pas la clé).
+    pub fn commande(&self) -> Result<String, String> {
+        let mut ligne = self.modele.to_string();
+        for champ in &self.champs {
+            let jeton = format!("{{{}}}", champ.cle);
+            let valeur = champ.propre();
+            if valeur.is_empty() {
+                if champ.obligatoire {
+                    return Err(format!("« {} » est obligatoire — {}", champ.libelle, champ.indice));
+                }
+                // Champ facultatif vide : on retire son option et sa valeur.
+                ligne = ligne.replace(&format!(" --{} {jeton}", champ.cle), "");
+                ligne = ligne.replace(&format!(" {jeton}"), "");
+                continue;
+            }
+            ligne = ligne.replace(&jeton, &valeur);
+        }
+        let restant = ligne
+            .find('{')
+            .and_then(|debut| ligne[debut..].find('}').map(|fin| &ligne[debut..debut + fin + 1]));
+        if let Some(jeton) = restant {
+            let cle = jeton.trim_matches(|c| c == '{' || c == '}');
+            let libelle = self
+                .champs
+                .iter()
+                .find(|c| c.cle == cle)
+                .map(|c| c.libelle)
+                .unwrap_or(cle);
+            return Err(format!("« {libelle} » est obligatoire"));
+        }
+        Ok(ligne.split_whitespace().collect::<Vec<_>>().join(" "))
+    }
+
+    pub fn avancer(&mut self) {
+        if !self.champs.is_empty() {
+            // `focus` sert aussi de « champ actif » pour la saisie clavier.
+            self.focus = (self.focus + 1) % self.champs.len();
         }
     }
 
-    pub fn societe(regime: RegimeTva) -> Self {
-        Self {
-            type_form: TypeFormulaire::Societe,
-            titre: "Société — régime de TVA".to_string(),
-            champs: vec![Champ::choix("Régime TVA", &["franchise", "reel"], regime.as_str())],
-            actif: 0,
-            erreur: None,
-            numero_document: String::new(),
-            article_id: 0,
+    pub fn reculer(&mut self) {
+        if !self.champs.is_empty() {
+            self.focus = (self.focus + self.champs.len() - 1) % self.champs.len();
         }
-    }
-
-    pub fn export_fec() -> Self {
-        Self {
-            type_form: TypeFormulaire::ExportFec,
-            titre: "Export FEC (expert-comptable)".to_string(),
-            champs: vec![Champ::texte("Fichier de sortie", "FEC.txt")],
-            actif: 0,
-            erreur: None,
-            numero_document: String::new(),
-            article_id: 0,
-        }
-    }
-
-    pub fn suivant(&mut self) {
-        if self.actif + 1 < self.champs.len() {
-            self.actif += 1;
-        }
-    }
-
-    pub fn precedent(&mut self) {
-        self.actif = self.actif.saturating_sub(1);
-    }
-
-    pub fn est_dernier_champ(&self) -> bool {
-        self.actif + 1 >= self.champs.len()
     }
 
     pub fn saisir(&mut self, c: char) {
-        let champ = &mut self.champs[self.actif];
-        if champ.options.is_empty() {
+        if let Some(champ) = self.champs.get_mut(self.focus) {
             champ.valeur.push(c);
         }
     }
 
     pub fn effacer(&mut self) {
-        let champ = &mut self.champs[self.actif];
-        if champ.options.is_empty() {
+        if let Some(champ) = self.champs.get_mut(self.focus) {
             champ.valeur.pop();
         }
     }
+}
 
-    /// ←/→ sur un champ à choix ; sans effet sur un champ texte.
-    pub fn defiler_choix(&mut self, sens: i32) {
-        let champ = &mut self.champs[self.actif];
-        if champ.options.is_empty() {
-            return;
+// ---------------------------------------------------------------------- Vue
+
+/// État de l'écran : onglet, défilement, contenu déjà chargé.
+#[derive(Debug, Clone)]
+pub struct Vue {
+    pub onglet: usize,
+    pub titre: String,
+    pub lignes: Vec<String>,
+    pub defilement: u16,
+    pub message: String,
+    pub succes: bool,
+    pub formulaire: Option<Formulaire>,
+    pub aide: bool,
+    pub recherhe: Option<String>,
+    pub quitter: bool,
+}
+
+impl Default for Vue {
+    fn default() -> Self {
+        Self {
+            onglet: 0,
+            titre: String::new(),
+            lignes: Vec::new(),
+            defilement: 0,
+            message: "Prêt · toutes les données restent locales".to_string(),
+            succes: false,
+            formulaire: None,
+            aide: false,
+            recherhe: None,
+            quitter: false,
         }
-        let pos = champ.options.iter().position(|o| *o == champ.valeur).unwrap_or(0) as i32;
-        let n = champ.options.len() as i32;
-        let suivant = (pos + sens).rem_euclid(n) as usize;
-        champ.valeur = champ.options[suivant].to_string();
-    }
-
-    fn v(&self, i: usize) -> String {
-        self.champs.get(i).map(|c| c.valeur.trim().to_string()).unwrap_or_default()
     }
 }
 
-fn valider_date(s: &str, champ: &str) -> Result<(), String> {
-    let ok = s.len() == 10
-        && s.chars().enumerate().all(|(i, c)| if i == 4 || i == 7 { c == '-' } else { c.is_ascii_digit() });
-    if ok {
-        Ok(())
+impl Vue {
+    pub fn nouvelle() -> Self {
+        Self::default()
+    }
+
+    /// Commande correspondant à l'écran courant.
+    pub fn chemin(&self) -> String {
+        match &self.recherhe {
+            Some(texte) => format!("/recherche {texte}"),
+            None => ONGLETS[self.onglet.min(ONGLETS.len() - 1)].1.to_string(),
+        }
+    }
+
+    /// Recharge le contenu depuis l'application (lecture seule).
+    pub fn rafraichir(&mut self, app: &mut App) {
+        let commande = self.chemin();
+        let mut commande = if commande.is_empty() {
+            "/".to_string()
+        } else {
+            commande
+        };
+        if commande.starts_with("/clients")
+            || commande.starts_with("/devis")
+            || commande.starts_with("/factures")
+            || commande.starts_with("/avoirs")
+            || commande.starts_with("/vinted")
+        {
+            commande.push_str(" --lignes 500");
+        }
+        match app.apercu(&commande) {
+            Ok(texte) => {
+                self.lignes = sans_ansi(&texte)
+                    .lines()
+                    .map(|l| l.trim_end().to_string())
+                    .collect();
+                if self.defilement as usize >= self.lignes.len() {
+                    self.defilement = self.lignes.len().saturating_sub(1) as u16;
+                }
+                self.titre = ONGLETS[self.onglet.min(ONGLETS.len() - 1)].0.to_string();
+            }
+            Err(e) => {
+                self.lignes = vec![format!("✗ {e}")];
+                self.message = e;
+                self.succes = false;
+            }
+        }
+    }
+
+    /// Ouvre le formulaire attendu pour l'onglet courant.
+    pub fn formulaire_onglet(&self) -> Formulaire {
+        match ONGLETS[self.onglet.min(ONGLETS.len() - 1)].1 {
+            "/clients" => Formulaire::client(),
+            "/devis" => Formulaire::document("devis"),
+            "/factures" | "/avoirs" => Formulaire::document("facture"),
+            "/vinted" => Formulaire::article(),
+            _ => Formulaire::recherche(),
+        }
+    }
+
+    /// Applique une touche. Renvoie `true` si un rafraîchissement est utile.
+    pub fn touche(&mut self, app: &mut App, touche: KeyEvent) -> bool {
+        if touche.kind != KeyEventKind::Press {
+            return false;
+        }
+        // 1. Saisie dans un formulaire.
+        if let Some(mut form) = self.formulaire.take() {
+            match touche.code {
+                KeyCode::Esc => {
+                    self.message = "Saisie abandonnée".to_string();
+                    self.succes = false;
+                }
+                KeyCode::Tab | KeyCode::Down => {
+                    form.avancer();
+                    self.formulaire = Some(form);
+                }
+                KeyCode::BackTab | KeyCode::Up => {
+                    form.reculer();
+                    self.formulaire = Some(form);
+                }
+                KeyCode::Backspace => {
+                    form.effacer();
+                    self.formulaire = Some(form);
+                }
+                KeyCode::Enter => match form.commande() {
+                    Err(e) => {
+                        form.erreur = Some(e);
+                        self.formulaire = Some(form);
+                    }
+                    Ok(commande) => {
+                        let mut tampon: Vec<u8> = Vec::new();
+                        match app.executer(&commande, &mut tampon) {
+                            Ok(_) => {
+                                self.message = sans_ansi(&String::from_utf8_lossy(&tampon))
+                                    .lines()
+                                    .next()
+                                    .unwrap_or("fait")
+                                    .to_string();
+                                self.succes = true;
+                                self.recherhe = None;
+                                return true;
+                            }
+                            Err(e) => {
+                                self.message = e.clone();
+                                form.erreur = Some(e);
+                                self.formulaire = Some(form);
+                                self.succes = false;
+                            }
+                        }
+                    }
+                },
+                KeyCode::Char(c) => {
+                    form.saisir(c);
+                    self.formulaire = Some(form);
+                }
+                _ => self.formulaire = Some(form),
+            }
+            return false;
+        }
+        // 2. Aide affichée : n'importe quelle touche la referme.
+        if self.aide {
+            self.aide = false;
+            return false;
+        }
+        // 3. Navigation.
+        match touche.code {
+            KeyCode::Char('q') | KeyCode::Esc => self.quitter = true,
+            KeyCode::Char('c') if touche.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.quitter = true
+            }
+            KeyCode::Right | KeyCode::Tab => {
+                self.onglet = (self.onglet + 1) % ONGLETS.len();
+                self.defilement = 0;
+                self.recherhe = None;
+                return true;
+            }
+            KeyCode::Left | KeyCode::BackTab => {
+                self.onglet = (self.onglet + ONGLETS.len() - 1) % ONGLETS.len();
+                self.defilement = 0;
+                self.recherhe = None;
+                return true;
+            }
+            KeyCode::Down => {
+                if (self.defilement as usize) + 1 < self.lignes.len().max(1) {
+                    self.defilement += 1;
+                }
+            }
+            KeyCode::Up => self.defilement = self.defilement.saturating_sub(1),
+            KeyCode::PageDown => {
+                self.defilement = (self.defilement + 10).min(self.lignes.len() as u16);
+            }
+            KeyCode::PageUp => self.defilement = self.defilement.saturating_sub(10),
+            KeyCode::Home => self.defilement = 0,
+            KeyCode::End => {
+                self.defilement = self.lignes.len().saturating_sub(1) as u16;
+            }
+            KeyCode::Char('r') | KeyCode::F(5) => return true,
+            KeyCode::Char('n') => {
+                self.formulaire = Some(self.formulaire_onglet());
+            }
+            KeyCode::Char('p') => {
+                self.formulaire = Some(Formulaire::paiement());
+            }
+            KeyCode::Char('v') => {
+                self.formulaire = Some(Formulaire::vente());
+            }
+            KeyCode::Char('s') | KeyCode::Char('/') => {
+                self.formulaire = Some(Formulaire::recherche());
+            }
+            KeyCode::Char('?') => self.aide = true,
+            _ => {}
+        }
+        false
+    }
+}
+
+/// Retire les séquences ANSI (le CLI colore, Ratatui ne les interprète pas).
+pub fn sans_ansi(texte: &str) -> String {
+    let mut sortie = String::with_capacity(texte.len());
+    let mut iter = texte.chars().peekable();
+    while let Some(c) = iter.next() {
+        if c == '\u{1b}' {
+            if iter.peek() == Some(&'[') {
+                iter.next();
+                // Jusqu'à la lettre finale (m pour une couleur, K pour un effacement).
+                for suivant in iter.by_ref() {
+                    if suivant.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        sortie.push(c);
+    }
+    sortie
+}
+
+/// Style d'une ligne de contenu, d'après son marqueur sémantique.
+fn style_ligne(ligne: &str) -> Style {
+    let base = Style::default().fg(rgb(theme::BLANC_RGB));
+    if ligne.starts_with('✓') {
+        base.fg(rgb(theme::VERT_RGB))
+    } else if ligne.starts_with('⚠') {
+        base.fg(rgb(theme::ORANGE_RGB))
+    } else if ligne.starts_with('✗') {
+        base.fg(rgb(theme::ROUGE_RGB))
+    } else if ligne.starts_with("────") || ligne.starts_with("─") {
+        base.fg(rgb(theme::VIOLET_INACTIF_RGB))
+    } else if ligne.starts_with("page ") || ligne.starts_with("(") {
+        base.fg(rgb(theme::BLEU_RGB))
     } else {
-        Err(format!("{champ} : date au format AAAA-MM-JJ attendue, reçu « {s} »"))
+        base
     }
 }
 
-/// Valide le formulaire et applique son effet au `Store`.
-/// Retourne le message de succès à afficher ; en cas d'erreur, le
-/// formulaire reste ouvert et affiche le motif (aucune écriture partielle).
-pub fn soumettre_formulaire(store: &mut dyn Store, form: &Formulaire) -> Result<String, String> {
-    match &form.type_form {
-        TypeFormulaire::Client => {
-            let nom = form.v(0);
-            if nom.is_empty() {
-                return Err("le nom du client est obligatoire".into());
-            }
-            let c = store.creer_client(Client {
-                id: 0,
-                nom: nom.clone(),
-                type_client: TypeClient::from_str(&form.v(1))?,
-                email: form.v(2),
-                telephone: form.v(3),
-                adresse: form.v(4),
-                siren: form.v(5),
-                tva_intracom: form.v(6),
-                notes: form.v(7),
-            })?;
-            let _ = store.journaliser("tui.formulaire.client", &c.nom);
-            Ok(format!("✓ Client n°{} créé : {}", c.id, c.nom))
-        }
-        TypeFormulaire::Document(type_doc) => {
-            let recherche = form.v(0);
-            if recherche.is_empty() {
-                return Err("indiquez le client (nom ou e-mail)".into());
-            }
-            let client = store
-                .chercher_clients(&recherche)?
-                .into_iter()
-                .next()
-                .ok_or_else(|| format!("client « {recherche} » introuvable — créez-le d'abord (module Clients, touche n)"))?;
-            let designation = form.v(4);
-            if designation.is_empty() {
-                return Err("la désignation de la ligne est obligatoire".into());
-            }
-            let quantite: f64 = form.v(5).replace(',', ".").parse().map_err(|_| "quantité illisible".to_string())?;
-            if quantite <= 0.0 {
-                return Err("la quantité doit être positive".into());
-            }
-            let prix = parse_eur(&form.v(6))?;
-            let tva_bp: i32 = form.v(7).parse().map_err(|_| "taux TVA illisible (points de base)".to_string())?;
-            let date = form.v(2);
-            valider_date(&date, "Date")?;
-            let echeance = form.v(3);
-            if !echeance.is_empty() {
-                valider_date(&echeance, "Échéance")?;
-            }
-            let doc = store.creer_document(
-                *type_doc,
-                client.id,
-                &date,
-                &echeance,
-                &form.v(1),
-                vec![Ligne::new(&designation, quantite, prix, tva_bp)],
-            )?;
-            let _ = store.journaliser("tui.formulaire.document", &doc.numero);
-            Ok(format!("✓ {} créé : {} (brouillon){}", type_doc.as_str(), doc.numero, if *type_doc == TypeDocument::Facture { " — v pour valider" } else { "" }))
-        }
-        TypeFormulaire::Paiement => {
-            let montant = parse_eur(&form.v(0))?;
-            if montant <= 0 {
-                return Err("le montant du paiement doit être positif".into());
-            }
-            let date = form.v(1);
-            valider_date(&date, "Date")?;
-            let doc = store.ajouter_paiement(&form.numero_document, montant, &date, &form.v(2))?;
-            let regime = store.societe()?.regime;
-            let _ = store.journaliser("tui.formulaire.paiement", &doc.numero);
-            Ok(format!(
-                "✓ Paiement enregistré sur {} — statut : {} (reste {})",
-                doc.numero,
-                doc.statut.as_str(),
-                format_eur(reste_a_payer(doc.totaux(regime).ttc, doc.paye))
-            ))
-        }
-        TypeFormulaire::Article => {
-            if form.v(0).is_empty() || form.v(1).is_empty() {
-                return Err("marque et description sont obligatoires".into());
-            }
-            if form.v(3).is_empty() {
-                return Err("composition textile obligatoire (règlement UE 1007/2011)".into());
-            }
-            let prix_achat = parse_eur(&form.v(5))?;
-            let date = form.v(6);
-            valider_date(&date, "Date d'achat")?;
-            let a = store.creer_article(Article {
-                id: 0,
-                marque: form.v(0),
-                description: form.v(1),
-                taille: form.v(2),
-                composition: form.v(3),
-                etat: form.v(4),
-                prix_achat,
-                date_achat: date,
-                statut: "en_stock".to_string(),
-            })?;
-            let _ = store.journaliser("tui.formulaire.article", &a.marque);
-            Ok(format!("✓ Article n°{} ajouté : {} {}", a.id, a.marque, a.description))
-        }
-        TypeFormulaire::Vente => {
-            let article = store.article_par_id(form.article_id)?;
-            if article.statut == "vendu" {
-                return Err("cet article est déjà vendu".into());
-            }
-            let prix_vente = parse_eur(&form.v(0))?;
-            if prix_vente <= 0 {
-                return Err("le prix de vente doit être positif".into());
-            }
-            let frais = parse_eur(&form.v(1))?;
-            let date = form.v(2);
-            valider_date(&date, "Date de vente")?;
-            let vente = store.enregistrer_vente(Vente {
-                id: 0,
-                article_id: form.article_id,
-                date_vente: date,
-                prix_vente,
-                frais,
-                plateforme: form.v(3),
-            })?;
-            let _ = store.journaliser("tui.formulaire.vente", &vente.id.to_string());
-            Ok(format!(
-                "✓ Vente enregistrée : {} {} vendu {} — marge nette {}",
-                article.marque,
-                article.description,
-                format_eur(prix_vente),
-                format_eur(marge_nette(&article, &vente))
-            ))
-        }
-        TypeFormulaire::Societe => {
-            let regime = RegimeTva::from_str(&form.v(0))?;
-            store.set_regime_tva(regime)?;
-            let _ = store.journaliser("tui.formulaire.societe", regime.as_str());
-            Ok(format!("✓ Régime TVA : {}", regime.as_str()))
-        }
-        TypeFormulaire::ExportFec => {
-            let fichier = form.v(0);
-            if fichier.is_empty() {
-                return Err("indiquez le fichier de sortie".into());
-            }
-            let lignes = generer_fec(store)?;
-            std::fs::write(&fichier, lignes.join("\n") + "\n").map_err(|e| format!("écriture du FEC : {e}"))?;
-            let _ = store.journaliser("tui.formulaire.fec", &fichier);
-            Ok(format!("✓ FEC écrit dans {fichier} ({} lignes) — à faire valider par l'expert-comptable", lignes.len()))
-        }
-    }
-}
-
-// ---------------------------------------------------------------- Styles Ratatui
-
-fn style_rgb((r, g, b): (u8, u8, u8)) -> Style {
-    Style::default().fg(Color::Rgb(r, g, b))
-}
-
-fn style_blanc() -> Style {
-    style_rgb(theme::BLANC_RGB)
+fn rgb((r, g, b): (u8, u8, u8)) -> Color {
+    Color::Rgb(r, g, b)
 }
 
 fn style_titre() -> Style {
-    style_blanc().add_modifier(Modifier::BOLD)
+    Style::default()
+        .fg(rgb(theme::BLANC_RGB))
+        .add_modifier(Modifier::BOLD)
 }
 
 fn style_violet() -> Style {
-    style_rgb(theme::VIOLET_RGB)
+    Style::default().fg(rgb(theme::VIOLET_RGB))
 }
 
-fn style_violet_inactif() -> Style {
-    style_rgb(theme::VIOLET_INACTIF_RGB)
+fn style_onglet_actif() -> Style {
+    Style::default()
+        .fg(rgb(theme::BLANC_RGB))
+        .bg(rgb(theme::SURLIGNAGE_BLANC_20_RGB))
+        .add_modifier(Modifier::BOLD)
 }
 
-fn style_selection() -> Style {
-    style_violet().add_modifier(Modifier::BOLD)
+fn style_onglet_inactif() -> Style {
+    Style::default().fg(rgb(theme::VIOLET_INACTIF_RGB))
 }
 
-/// Sélection visible : écriture violette en gras sur surlignage blanc 20 %
-/// (équivalent RGB d'un blanc à 20 % sur fond noir, Ratatui ne gérant pas
-/// la transparence). Utilisé pour l'onglet actif, la ligne et le choix de
-/// menu sélectionnés.
-fn style_surlignage() -> Style {
-    let (r, g, b) = theme::SURLIGNAGE_BLANC_20_RGB;
-    style_selection().bg(Color::Rgb(r, g, b))
-}
-
-fn style_message(message: &str) -> Style {
-    if message.starts_with('✓') {
-        style_rgb(theme::VERT_RGB)
-    } else if message.starts_with('✗') {
-        style_rgb(theme::ROUGE_RGB).add_modifier(Modifier::BOLD)
-    } else if message.contains('⚠') {
-        style_rgb(theme::ORANGE_RGB)
+fn style_message(vue: &Vue) -> Style {
+    if vue.succes {
+        Style::default().fg(rgb(theme::VERT_RGB))
     } else {
-        style_blanc()
+        Style::default().fg(rgb(theme::ORANGE_RGB))
     }
 }
 
-// ---------------------------------------------------------------- Rendu Ratatui
+// ------------------------------------------------------------------ Rendu
 
-fn zone_centree(pourcent_x: u16, pourcent_y: u16, zone: Rect) -> Rect {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - pourcent_y) / 2),
-            Constraint::Percentage(pourcent_y),
-            Constraint::Percentage((100 - pourcent_y) / 2),
-        ])
-        .split(zone);
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - pourcent_x) / 2),
-            Constraint::Percentage(pourcent_x),
-            Constraint::Percentage((100 - pourcent_x) / 2),
-        ])
-        .split(vertical[1])[1]
-}
-
-fn dessiner(frame: &mut Frame, vue: &VueTui, contenu: &ContenuModule, societe_nom: &str) {
+fn dessiner(frame: &mut Frame, vue: &Vue, societe: &str, regime: &str, devise: &str) {
     let zones = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Length(4), Constraint::Min(1), Constraint::Length(2)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(3),
+            Constraint::Length(1),
+        ])
         .split(frame.area());
 
-    // Titre
-    frame.render_widget(
-        Paragraph::new(format!(" ERP — {societe_nom}")).style(style_titre()).block(Block::default().borders(Borders::ALL).border_style(style_blanc())),
-        zones[0],
-    );
+    // En-tête : société, régime, devise, chemin courant.
+    let entete = TxtLine::from(vec![
+        Span::styled(" ERP ", style_onglet_actif()),
+        Span::styled(format!(" {societe} "), style_titre()),
+        Span::styled(
+            format!("· {regime} · {devise} · {} ", vue.chemin().trim()),
+            style_violet(),
+        ),
+    ]);
+    frame.render_widget(Paragraph::new(entete), zones[0]);
 
-    // Onglets : colonnes égales et centrées, double indicateur de
-    // sélection (gras/surlignage + soulignement), voir dessiner_onglets.
-    dessiner_onglets(frame, zones[1], vue.module);
-
-    // Contenu du module
-    let bloc = Block::default()
-        .title(format!(" {} ", MODULES[vue.module]))
-        .borders(Borders::ALL)
-        .border_style(style_blanc())
-        .title_style(style_titre());
-    if contenu.lignes.is_empty() {
-        frame.render_widget(
-            Paragraph::new("(aucun élément — touche f pour ouvrir un formulaire, n pour créer)").block(bloc),
-            zones[2],
-        );
-    } else {
-        let items: Vec<ListItem> = contenu
-            .lignes
-            .iter()
-            .map(|l| {
-                let style = if l.contains('⚠') {
-                    style_rgb(theme::ORANGE_RGB)
-                } else if l.contains('✓') {
-                    style_rgb(theme::VERT_RGB)
-                } else {
-                    Style::default()
-                };
-                ListItem::new(l.clone()).style(style)
-            })
-            .collect();
-        let mut etat = ListState::default();
-        if vue.module != 0 && vue.module != 4 {
-            etat.select(Some(vue.selection.min(contenu.lignes.len() - 1)));
-        }
-        frame.render_stateful_widget(
-            List::new(items).block(bloc).highlight_style(style_surlignage()).highlight_symbol("▸ "),
-            zones[2],
-            &mut etat,
-        );
+    // Onglets.
+    let mut onglets: Vec<Span> = Vec::new();
+    for (index, (nom, _)) in ONGLETS.iter().enumerate() {
+        let style = if index == vue.onglet {
+            style_onglet_actif()
+        } else {
+            style_onglet_inactif()
+        };
+        onglets.push(Span::styled(format!(" {nom} "), style));
+        onglets.push(Span::styled("│", style_onglet_inactif()));
     }
+    frame.render_widget(Paragraph::new(TxtLine::from(onglets)), zones[1]);
 
-    // Pied : message + aide-mémoire des touches
-    frame.render_widget(
-        Paragraph::new(vec![
-            Line::styled(vue.message.clone(), style_message(&vue.message)),
-            Line::styled("f formulaires · n nouveau · ↑↓ naviguer · Tab module · ? aide · q quitter", style_violet()),
-        ])
-        .wrap(Wrap { trim: true }),
-        zones[3],
-    );
+    // Contenu.
+    let lignes: Vec<TxtLine> = vue
+        .lignes
+        .iter()
+        .map(|l| TxtLine::from(Span::styled(l.clone(), style_ligne(l))))
+        .collect();
+    let bloc = Block::default()
+        .borders(Borders::ALL)
+        .border_style(style_violet())
+        .title(Span::styled(
+            format!(" {} ", vue.titre),
+            style_titre(),
+        ));
+    let contenu = Paragraph::new(lignes)
+        .block(bloc)
+        .wrap(Wrap { trim: false })
+        .scroll((vue.defilement, 0));
+    frame.render_widget(contenu, zones[2]);
+
+    // Pied : message + raccourcis (toujours visibles).
+    let pied = TxtLine::from(vec![
+        Span::styled(format!(" {} ", vue.message), style_message(vue)),
+        Span::styled(RACCOURCIS, style_onglet_inactif()),
+    ]);
+    frame.render_widget(Paragraph::new(pied), zones[3]);
 
     if vue.aide {
-        dessiner_aide(frame);
-    }
-    if vue.menu_formulaires {
-        dessiner_menu_formulaires(frame, vue.choix_menu);
+        dessiner_aide(frame, vue);
     }
     if let Some(form) = &vue.formulaire {
         dessiner_formulaire(frame, form);
     }
 }
 
-/// Onglets selon les règles classiques (Material Design, NN/g) :
-/// - colonnes de largeur égale, libellés centrés (onglets fixes) ;
-/// - un seul composant cohérent : pas de séparateurs verticaux durs,
-///   l'espacement régulier suffit à grouper ;
-/// - sélection indiquée par DEUX signaux : gras + léger surlignage
-///   limité au libellé, et soulignement violet sous le libellé ;
-/// - inactifs atténués mais lisibles, hiérarchie calme.
-fn dessiner_onglets(frame: &mut Frame, zone: Rect, actif: usize) {
-    let bloc = Block::default().borders(Borders::ALL).border_style(style_blanc());
-    let interieur = bloc.inner(zone);
-    frame.render_widget(bloc, zone);
-    let nb = MODULES.len() as u16;
-    let largeur_base = interieur.width / nb;
-    let reste = interieur.width % nb;
-    let mut x = interieur.x;
-    for (i, titre) in MODULES.iter().enumerate() {
-        // Colonnes égales ; le reste éventuel va aux premières colonnes.
-        let largeur = largeur_base + if (i as u16) < reste { 1 } else { 0 };
-        let cellule = Rect { x, y: interieur.y, width: largeur, height: 1 };
-        if i == actif {
-            frame.render_widget(
-                Paragraph::new(Line::from(Span::styled(format!("  {titre}  "), style_surlignage()))).alignment(Alignment::Center),
-                cellule,
-            );
-            let soulignement = Rect { x, y: interieur.y + 1, width: largeur, height: 1 };
-            frame.render_widget(
-                Paragraph::new(Line::from(Span::styled("─".repeat(titre.chars().count()), style_selection()))).alignment(Alignment::Center),
-                soulignement,
-            );
-        } else {
-            frame.render_widget(
-                Paragraph::new(Line::from(Span::styled(*titre, style_violet_inactif()))).alignment(Alignment::Center),
-                cellule,
-            );
-        }
-        x += largeur;
-    }
-}
-
-fn dessiner_aide(frame: &mut Frame) {
-    let zone = zone_centree(72, 70, frame.area());
+fn dessiner_aide(frame: &mut Frame, vue: &Vue) {
+    let zone = centre(frame.area(), 80, 70);
     frame.render_widget(Clear, zone);
-    let texte = vec![
-        Line::styled("AIDE — touches de la TUI", style_titre()),
-        Line::raw(""),
-        Line::raw("  Tab / Maj+Tab     module suivant / précédent"),
-        Line::raw("  ↑ / ↓  ou  j / k  monter / descendre dans la liste"),
-        Line::raw("  f                 ouvrir le menu des formulaires"),
-        Line::raw("  n                 nouveau… selon le module (client, facture, article, FEC, société)"),
-        Line::raw("  d                 nouveau devis (module Factures)"),
-        Line::raw("  v                 valider la facture sélectionnée"),
-        Line::raw("  p                 payer la facture sélectionnée (formulaire)"),
-        Line::raw("  Entrée            vendre l'article sélectionné (module Vinted)"),
-        Line::raw("  s / x             société (régime TVA) / export FEC (module Comptabilité)"),
-        Line::raw("  r                 rafraîchir les données"),
-        Line::raw("  ?                 afficher / masquer cette aide"),
-        Line::raw("  q                 quitter la TUI (le CLI reste disponible)"),
-        Line::raw(""),
-        Line::styled("Dans un formulaire", style_titre()),
-        Line::raw("  Tab / Entrée      champ suivant · Maj+Tab champ précédent"),
-        Line::raw("  ← / →             changer un champ à choix (type, activité, moyen…)"),
-        Line::raw("  Ctrl+S            enregistrer · Échap annuler"),
-        Line::raw(""),
-        Line::styled("  Échap ou ? pour fermer", style_violet()),
+    let mut lignes = vec![
+        TxtLine::from(Span::styled("Aide contextuelle", style_titre())),
+        TxtLine::from(""),
+        TxtLine::from(format!("Écran : {}", vue.chemin())),
+        TxtLine::from(""),
     ];
+    for (nom, chemin) in ONGLETS {
+        lignes.push(TxtLine::from(format!("  {nom:<18} {chemin}")));
+    }
+    lignes.push(TxtLine::from(""));
+    lignes.push(TxtLine::from(RACCOURCIS));
+    lignes.push(TxtLine::from(""));
+    lignes.push(TxtLine::from(
+        "Toute commande du CLI s'exécute aussi ici : tapez-la dans un terminal.",
+    ));
+    let bloc = Block::default()
+        .borders(Borders::ALL)
+        .border_style(style_violet())
+        .title(Span::styled(" ? ", style_titre()));
     frame.render_widget(
-        Paragraph::new(texte).block(Block::default().title(" Aide ").borders(Borders::ALL).border_style(style_blanc())),
+        Paragraph::new(lignes)
+            .block(bloc)
+            .wrap(Wrap { trim: false })
+            .alignment(Alignment::Left),
         zone,
-    );
-}
-
-fn dessiner_menu_formulaires(frame: &mut Frame, choix: usize) {
-    let zone = zone_centree(52, 52, frame.area());
-    frame.render_widget(Clear, zone);
-    let items: Vec<ListItem> = CHOIX_FORMULAIRES.iter().map(|c| ListItem::new(*c)).collect();
-    let mut etat = ListState::default();
-    etat.select(Some(choix.min(CHOIX_FORMULAIRES.len() - 1)));
-    frame.render_stateful_widget(
-        List::new(items)
-            .block(Block::default().title(" Formulaires — Entrée : ouvrir · Échap : fermer ").borders(Borders::ALL).border_style(style_blanc()).title_style(style_titre()))
-            .highlight_style(style_surlignage())
-            .highlight_symbol("▸ "),
-        zone,
-        &mut etat,
     );
 }
 
 fn dessiner_formulaire(frame: &mut Frame, form: &Formulaire) {
-    let zone = zone_centree(74, 88, frame.area());
+    let hauteur = (form.champs.len() as u16 * 3 + 6).min(frame.area().height);
+    let zone = centre_hauteur(frame.area(), 80, hauteur);
     frame.render_widget(Clear, zone);
+
+    let mut lignes: Vec<TxtLine> = Vec::new();
+    for (index, champ) in form.champs.iter().enumerate() {
+        let actif = index == form.focus;
+        let style = if actif {
+            style_onglet_actif()
+        } else {
+            Style::default().fg(rgb(theme::BLANC_RGB))
+        };
+        let marque = if champ.obligatoire { "*" } else { " " };
+        lignes.push(TxtLine::from(Span::styled(
+            format!("{marque} {}", champ.libelle),
+            style_titre(),
+        )));
+        lignes.push(TxtLine::from(Span::styled(
+            format!("  {}▏", champ.valeur),
+            style,
+        )));
+        lignes.push(TxtLine::from(Span::styled(
+            format!("  {}", champ.indice),
+            Style::default().fg(rgb(theme::VIOLET_INACTIF_RGB)),
+        )));
+    }
+    if let Some(erreur) = &form.erreur {
+        lignes.push(TxtLine::from(Span::styled(
+            format!("✗ {erreur}"),
+            Style::default().fg(rgb(theme::ROUGE_RGB)),
+        )));
+    }
+    lignes.push(TxtLine::from(Span::styled(
+        "Entrée valider · Tab champ suivant · Échap annuler",
+        style_onglet_inactif(),
+    )));
+
+    let bloc = Block::default()
+        .borders(Borders::ALL)
+        .border_style(style_violet())
+        .title(Span::styled(format!(" {} ", form.titre), style_titre()));
     frame.render_widget(
-        Block::default().title(format!(" {} ", form.titre)).borders(Borders::ALL).border_style(style_titre()).title_style(style_titre()),
+        Paragraph::new(lignes)
+            .block(bloc)
+            .wrap(Wrap { trim: false }),
         zone,
     );
-    let interieur = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints(
-            std::iter::repeat_n(Constraint::Length(3), form.champs.len())
-                .chain([Constraint::Length(2), Constraint::Length(2)])
-                .collect::<Vec<_>>(),
-        )
-        .split(zone);
-    for (i, champ) in form.champs.iter().enumerate() {
-        let actif = i == form.actif;
-        let valeur = if champ.options.is_empty() {
-            if actif { format!("{}▌", champ.valeur) } else { champ.valeur.clone() }
-        } else {
-            format!("‹ {} ›", champ.valeur)
-        };
-        frame.render_widget(
-            Paragraph::new(valeur)
-                .style(if actif { style_selection() } else { style_blanc() })
-                .block(
-                    Block::default()
-                        .title(format!(" {} ", champ.nom))
-                        .borders(Borders::ALL)
-                        .border_style(if actif { style_selection() } else { style_blanc() }),
-                ),
-            interieur[i],
-        );
-    }
-    let zone_erreur = interieur[form.champs.len()];
-    if let Some(e) = &form.erreur {
-        frame.render_widget(Paragraph::new(format!("✗ {e}")).style(style_rgb(theme::ROUGE_RGB).add_modifier(Modifier::BOLD)), zone_erreur);
-    }
-    frame.render_widget(
-        Paragraph::new("Tab/Entrée champ suivant · ←→ choix · Ctrl+S enregistrer · Échap annuler").style(style_violet()),
-        interieur[form.champs.len() + 1],
-    );
 }
 
-// ---------------------------------------------------------------- Ouverture de formulaires
-
-fn ouvrir_formulaire(vue: &mut VueTui, form: Formulaire, module: usize) {
-    vue.module = module;
-    vue.selection = 0;
-    vue.menu_formulaires = false;
-    vue.formulaire = Some(form);
+fn centre(zone: Rect, pourcent_largeur: u16, pourcent_hauteur: u16) -> Rect {
+    let hauteur = zone.height * pourcent_hauteur / 100;
+    centre_hauteur(zone, pourcent_largeur, hauteur)
 }
 
-/// Touche `n` : formulaire de création adapté au module courant.
-fn ouvrir_nouveau(store: &mut dyn Store, vue: &mut VueTui) -> Result<(), String> {
-    match vue.module {
-        0 => {
-            let regime = store.societe()?.regime;
-            ouvrir_formulaire(vue, Formulaire::societe(regime), 0);
-        }
-        1 => ouvrir_formulaire(vue, Formulaire::client(), 1),
-        2 => ouvrir_formulaire(vue, Formulaire::document(TypeDocument::Facture), 2),
-        3 => ouvrir_formulaire(vue, Formulaire::article(), 3),
-        _ => ouvrir_formulaire(vue, Formulaire::export_fec(), 4),
+fn centre_hauteur(zone: Rect, pourcent_largeur: u16, hauteur: u16) -> Rect {
+    let largeur = zone.width * pourcent_largeur / 100;
+    let largeur = largeur.min(zone.width);
+    let hauteur = hauteur.min(zone.height);
+    Rect {
+        x: zone.x + (zone.width.saturating_sub(largeur)) / 2,
+        y: zone.y + (zone.height.saturating_sub(hauteur)) / 2,
+        width: largeur,
+        height: hauteur,
     }
-    Ok(())
 }
 
-/// Entrée du menu `f` (index dans `CHOIX_FORMULAIRES`).
-fn ouvrir_choix_menu(store: &mut dyn Store, vue: &mut VueTui, choix: usize) -> Result<(), String> {
-    match choix {
-        0 => ouvrir_formulaire(vue, Formulaire::client(), 1),
-        1 => ouvrir_formulaire(vue, Formulaire::document(TypeDocument::Facture), 2),
-        2 => ouvrir_formulaire(vue, Formulaire::document(TypeDocument::Devis), 2),
-        3 => ouvrir_formulaire(vue, Formulaire::article(), 3),
-        4 => {
-            vue.menu_formulaires = false;
-            vue.module = 3;
-            vue.selection = 0;
-            vue.message = "Sélectionnez l'article avec ↑↓ puis Entrée pour le vendre".to_string();
-        }
-        5 => {
-            let regime = store.societe()?.regime;
-            ouvrir_formulaire(vue, Formulaire::societe(regime), vue.module);
-        }
-        _ => ouvrir_formulaire(vue, Formulaire::export_fec(), 4),
+// ------------------------------------------------------------------ Boucle
+
+/// Lance la TUI sur le magasin déjà ouvert par `main`.
+///
+/// Le terminal est toujours restauré, même si une touche provoque une erreur :
+/// une session interrompue ne doit pas laisser le terminal en mode brut.
+pub fn lancer(app: &mut App) -> Result<(), String> {
+    let mut sortie = std::io::stdout();
+    enable_raw_mode().map_err(|e| format!("passage du terminal en mode brut : {e}"))?;
+    if let Err(e) = execute!(sortie, EnterAlternateScreen) {
+        let _ = disable_raw_mode();
+        return Err(format!("écran alternatif : {e}"));
     }
-    Ok(())
-}
-
-fn ouvrir_paiement(store: &mut dyn Store, vue: &VueTui, contenu: &ContenuModule) -> Option<Formulaire> {
-    let doc = contenu.factures.get(vue.selection)?;
-    let regime = store.societe().ok()?.regime;
-    let reste = reste_a_payer(doc.totaux(regime).ttc, doc.paye);
-    if reste <= 0 {
-        return None;
-    }
-    Some(Formulaire::paiement(doc, reste))
-}
-
-fn ouvrir_vente(vue: &VueTui, contenu: &ContenuModule) -> Option<Formulaire> {
-    let article = contenu.articles.get(vue.selection)?;
-    if article.statut == "vendu" {
-        return None;
-    }
-    Some(Formulaire::vente(article))
-}
-
-// ---------------------------------------------------------------- Boucle Ratatui/Crossterm
-
-/// Boucle principale de la TUI. Retourne une erreur si pas de terminal.
-pub fn lancer(store: &mut dyn Store) -> Result<(), String> {
-    enable_raw_mode().map_err(|e| format!("terminal en mode raw impossible ({e}) — la TUI requiert un terminal interactif"))?;
-    let mut sortie = io::stdout();
-    execute!(sortie, EnterAlternateScreen).map_err(|e| e.to_string())?;
-    sortie.execute(crossterm::cursor::Hide).map_err(|e| e.to_string())?;
     let backend = CrosstermBackend::new(sortie);
-    let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
-    let resultat = boucle(&mut terminal, store);
-    // Restauration du terminal quoi qu'il arrive.
-    let _ = terminal.backend_mut().execute(crossterm::cursor::Show);
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    let mut terminal = match Terminal::new(backend) {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = disable_raw_mode();
+            return Err(format!("initialisation du terminal : {e}"));
+        }
+    };
+    let resultat = boucle(&mut terminal, app);
     let _ = disable_raw_mode();
+    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
     let _ = terminal.show_cursor();
     resultat
 }
 
-fn rafraichir(store: &mut dyn Store, vue: &VueTui) -> Result<ContenuModule, String> {
-    charger_contenu(store, vue.module)
-}
-
-fn boucle(terminal: &mut Terminal<CrosstermBackend<Stdout>>, store: &mut dyn Store) -> Result<(), String> {
-    let mut vue = VueTui::default();
-    let mut contenu = charger_contenu(store, vue.module)?;
-    let nom = store.societe()?.nom;
+fn boucle(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> Result<(), String> {
+    let mut vue = Vue::nouvelle();
+    vue.rafraichir(app);
     loop {
-        terminal.draw(|f| dessiner(f, &vue, &contenu, &nom)).map_err(|e| e.to_string())?;
-        let Event::Key(touche) = event::read().map_err(|e| e.to_string())? else {
-            continue;
-        };
-        if touche.kind == KeyEventKind::Release {
+        let mut nom = "Société".to_string();
+        let mut regime = String::new();
+        let mut devise = String::new();
+        if let Ok(societe) = app.store.societe() {
+            nom = societe.nom.clone();
+            regime = societe.regime.libelle().to_string();
+            devise = societe.devise.clone();
+        }
+        terminal
+            .draw(|frame| dessiner(frame, &vue, &nom, &regime, &devise))
+            .map_err(|e| format!("affichage : {e}"))?;
+        if vue.quitter {
+            return Ok(());
+        }
+        if !event::poll(Duration::from_millis(250)).map_err(|e| format!("terminal : {e}"))? {
             continue;
         }
-
-        // 1) Un formulaire ouvert capte toutes les touches.
-        if vue.formulaire.is_some() {
-            let code = touche.code;
-            let ctrl = touche.modifiers.contains(KeyModifiers::CONTROL);
-            if code == KeyCode::Esc {
-                vue.formulaire = None;
-                vue.message = "Formulaire annulé".to_string();
-                continue;
+        if let Event::Key(touche) = event::read().map_err(|e| format!("lecture clavier : {e}"))? {
+            if vue.touche(app, touche) {
+                vue.rafraichir(app);
             }
-            let mut form = vue.formulaire.take().unwrap();
-            let enregistrer = (ctrl && code == KeyCode::Char('s')) || (code == KeyCode::Enter && form.est_dernier_champ());
-            if enregistrer {
-                match soumettre_formulaire(store, &form) {
-                    Ok(message) => {
-                        vue.message = message;
-                        contenu = rafraichir(store, &vue)?;
-                    }
-                    Err(e) => {
-                        form.erreur = Some(e);
-                        vue.formulaire = Some(form);
-                    }
-                }
-                continue;
-            }
-            match code {
-                KeyCode::Tab | KeyCode::Down => form.suivant(),
-                KeyCode::BackTab | KeyCode::Up => form.precedent(),
-                KeyCode::Enter => form.suivant(),
-                KeyCode::Left => form.defiler_choix(-1),
-                KeyCode::Right => form.defiler_choix(1),
-                KeyCode::Backspace => form.effacer(),
-                KeyCode::Char(c) if !ctrl => form.saisir(c),
-                _ => {}
-            }
-            vue.formulaire = Some(form);
-            continue;
-        }
-
-        // 2) Le menu des formulaires (touche f), s'il est ouvert.
-        if vue.menu_formulaires {
-            match touche.code {
-                KeyCode::Esc => vue.menu_formulaires = false,
-                KeyCode::Up | KeyCode::Char('k') => {
-                    vue.choix_menu = (vue.choix_menu + CHOIX_FORMULAIRES.len() - 1) % CHOIX_FORMULAIRES.len()
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    vue.choix_menu = (vue.choix_menu + 1) % CHOIX_FORMULAIRES.len()
-                }
-                KeyCode::Enter => {
-                    let choix = vue.choix_menu;
-                    ouvrir_choix_menu(store, &mut vue, choix)?;
-                    if vue.formulaire.is_some() {
-                        contenu = rafraichir(store, &vue)?;
-                    } else if vue.module == 3 {
-                        contenu = rafraichir(store, &vue)?;
-                    }
-                }
-                _ => {}
-            }
-            continue;
-        }
-
-        // 3) L'aide, si elle est affichée.
-        if vue.aide {
-            if matches!(touche.code, KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q')) {
-                vue.aide = false;
-            }
-            continue;
-        }
-
-        // 4) Navigation et actions générales.
-        match touche.code {
-            KeyCode::Char('q') => break,
-            KeyCode::Char('c') if touche.modifiers.contains(KeyModifiers::CONTROL) => break,
-            KeyCode::Char('?') => vue.aide = true,
-            KeyCode::Char('f') => {
-                vue.menu_formulaires = true;
-                vue.choix_menu = 0;
-            }
-            KeyCode::Tab => {
-                vue.module = (vue.module + 1) % MODULES.len();
-                vue.selection = 0;
-                contenu = rafraichir(store, &vue)?;
-            }
-            KeyCode::BackTab => {
-                vue.module = (vue.module + MODULES.len() - 1) % MODULES.len();
-                vue.selection = 0;
-                contenu = rafraichir(store, &vue)?;
-            }
-            KeyCode::Up | KeyCode::Char('k') => vue.selection = vue.selection.saturating_sub(1),
-            KeyCode::Down | KeyCode::Char('j') => {
-                if vue.selection + 1 < contenu.lignes.len() {
-                    vue.selection += 1;
-                }
-            }
-            KeyCode::Char('r') => {
-                contenu = rafraichir(store, &vue)?;
-                vue.message = "Données rafraîchies".to_string();
-            }
-            KeyCode::Char('n') => ouvrir_nouveau(store, &mut vue)?,
-            KeyCode::Char('d') if vue.module == 2 => {
-                ouvrir_formulaire(&mut vue, Formulaire::document(TypeDocument::Devis), 2);
-            }
-            KeyCode::Char('s') if vue.module == 4 => {
-                let regime = store.societe()?.regime;
-                ouvrir_formulaire(&mut vue, Formulaire::societe(regime), 4);
-            }
-            KeyCode::Char('x') if vue.module == 4 => ouvrir_formulaire(&mut vue, Formulaire::export_fec(), 4),
-            KeyCode::Char('v') if vue.module == 2 => {
-                if let Some(d) = contenu.factures.get(vue.selection).cloned() {
-                    if !peut_modifier(d.statut) {
-                        vue.message = format!("✗ {} est déjà {} : un document validé ne se modifie plus", d.numero, d.statut.as_str());
-                    } else {
-                        match store.changer_statut(&d.numero, StatutDocument::Valide) {
-                            Ok(_) => {
-                                let _ = store.journaliser("tui.validation", &d.numero);
-                                vue.message = format!("✓ {} validée", d.numero);
-                            }
-                            Err(e) => vue.message = format!("✗ {e}"),
-                        }
-                        contenu = rafraichir(store, &vue)?;
-                    }
-                }
-            }
-            KeyCode::Char('p') if vue.module == 2 => {
-                if contenu.factures.get(vue.selection).is_none() {
-                    vue.message = "Aucune facture sélectionnée".to_string();
-                } else if let Some(form) = ouvrir_paiement(store, &vue, &contenu) {
-                    vue.formulaire = Some(form);
-                } else {
-                    let d = &contenu.factures[vue.selection];
-                    vue.message = format!("{} est déjà soldée", d.numero);
-                }
-            }
-            KeyCode::Enter if vue.module == 3 => {
-                if contenu.articles.get(vue.selection).is_none() {
-                    vue.message = "Aucun article sélectionné".to_string();
-                } else if let Some(form) = ouvrir_vente(&vue, &contenu) {
-                    vue.formulaire = Some(form);
-                } else {
-                    vue.message = "Cet article est déjà vendu".to_string();
-                }
-            }
-            _ => {}
         }
     }
-    Ok(())
+}
+
+/// Aide-mémoire : le CLI et la TUI partagent le même analyseur de commandes.
+pub fn commande_saisie(ligne: &str) -> Vec<String> {
+    tokeniser(ligne)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::backend::TestBackend;
 
-    fn contenu_ecran(vue: &VueTui, contenu: &ContenuModule) -> String {
-        let backend = TestBackend::new(110, 32);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|f| dessiner(f, vue, contenu, "Ma micro-entreprise")).unwrap();
-        terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .map(|c| c.symbol())
-            .collect()
+    fn lancer_cli(app: &mut App, ligne: &str) -> String {
+        let mut tampon: Vec<u8> = Vec::new();
+        app.executer(ligne, &mut tampon)
+            .unwrap_or_else(|e| panic!("{ligne} : {e}"));
+        sans_ansi(&String::from_utf8_lossy(&tampon).to_string())
     }
 
     #[test]
-    fn rendu_ratatui_modules_et_lignes() {
-        let vue = VueTui { module: 2, selection: 0, ..VueTui::default() };
-        let contenu = ContenuModule {
-            lignes: vec!["✓ FA-2026-0001  TTC 1 000,00 €".into()],
-            factures: Vec::new(),
-            clients: Vec::new(),
-            articles: Vec::new(),
-        };
-        let ecran = contenu_ecran(&vue, &contenu);
-        assert!(ecran.contains("Factures"));
-        assert!(ecran.contains("FA-2026-0001"));
-        assert!(ecran.contains("Ma micro-entreprise"));
-        assert!(ecran.contains("Tableau de bord"));
-        // Sélection : surlignage blanc 20 % (RGB 51,51,51) et gras.
-        let backend = TestBackend::new(110, 32);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|f| dessiner(f, &vue, &contenu, "Ma micro-entreprise")).unwrap();
-        let fond = Color::Rgb(51, 51, 51);
-        assert!(
-            terminal
-                .backend()
-                .buffer()
-                .content()
-                .iter()
-                .any(|c| c.bg == fond && c.modifier.contains(Modifier::BOLD)),
-            "onglet/ligne sélectionné sans surlignage blanc 20 % en gras"
-        );
-        // Deuxième indicateur : soulignement violet sous l'onglet actif,
-        // rangée 5 (titre 0-2, bordure 3, libellés 4, soulignement 5).
-        let cellules = terminal.backend().buffer().content();
-        let violet = Color::Rgb(238, 130, 238);
-        assert!(
-            cellules[5 * 110..6 * 110].iter().any(|c| c.fg == violet && c.symbol() == "─"),
-            "soulignement de l'onglet actif absent"
+    fn les_sequences_ansi_sont_retirees() {
+        let texte = "\u{1b}[38;2;74;222;128m✓ créé\u{1b}[0m\nligne 2";
+        assert_eq!(sans_ansi(texte), "✓ créé\nligne 2");
+        assert_eq!(sans_ansi("sans couleur"), "sans couleur");
+    }
+
+    #[test]
+    fn chaque_onglet_a_un_chemin_du_cli() {
+        for (nom, chemin) in ONGLETS {
+            assert!(!nom.is_empty());
+            assert!(chemin.starts_with('/'), "{chemin}");
+        }
+        let mut vue = Vue::nouvelle();
+        vue.onglet = 2;
+        assert_eq!(vue.chemin(), "/devis");
+        vue.onglet = 5;
+        assert_eq!(vue.chemin(), "/vinted");
+    }
+
+    #[test]
+    fn un_formulaire_compose_une_commande_du_cli() {
+        let mut form = Formulaire::client();
+        form.champs[0].valeur = "Dupont SARL".to_string();
+        form.champs[1].valeur = "professionnel".to_string();
+        // « Dupont SARL » contient une espace : elle doit être préservée
+        // (le CLI découpe les guillemets lui-même).
+        let commande = form.commande().unwrap();
+        assert_eq!(
+            commande,
+            "/clients nouveau --nom \"Dupont SARL\" --type professionnel"
         );
     }
 
     #[test]
-    fn rendu_formulaire_client() {
-        let vue = VueTui { module: 1, formulaire: Some(Formulaire::client()), ..VueTui::default() };
-        let contenu = ContenuModule::vide(Vec::new());
-        let ecran = contenu_ecran(&vue, &contenu);
-        assert!(ecran.contains("Nouveau client"));
-        assert!(ecran.contains("Nom"));
-        assert!(ecran.contains("Ctrl+S"));
-    }
-
-    #[test]
-    fn navigation_formulaire_et_choix() {
-        let mut form = Formulaire::client();
-        form.suivant();
-        assert_eq!(form.actif, 1); // champ Type (à choix)
-        form.defiler_choix(1);
-        assert_eq!(form.champs[1].valeur, "particulier");
-        form.defiler_choix(1);
-        assert_eq!(form.champs[1].valeur, "pro");
-        form.precedent();
-        form.saisir('Z');
-        assert_eq!(form.champs[0].valeur, "Z");
-        form.effacer();
-        assert_eq!(form.champs[0].valeur, "");
-    }
-
-    #[test]
-    fn formulaire_client_cree_un_client() {
-        let mut s = Memoire::new();
-        let mut form = Formulaire::client();
-        form.champs[0].valeur = "Atelier Dupont".into();
-        form.champs[2].valeur = "contact@example.fr".into();
-        let msg = soumettre_formulaire(&mut s, &form).unwrap();
-        assert!(msg.contains("Atelier Dupont"));
-        assert_eq!(s.clients().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn formulaire_client_sans_nom_refuse() {
-        let mut s = Memoire::new();
+    fn un_champ_obligatoire_vide_est_signale_en_francais() {
         let form = Formulaire::client();
-        assert!(soumettre_formulaire(&mut s, &form).is_err());
-        assert!(s.clients().unwrap().is_empty());
+        let erreur = form.commande().unwrap_err();
+        assert!(erreur.contains("Nom"), "{erreur}");
+        assert!(erreur.contains("obligatoire"), "{erreur}");
     }
 
     #[test]
-    fn formulaire_facture_puis_paiement() {
-        let mut s = Memoire::new();
-        s.creer_client(Client {
-            id: 0,
-            nom: "Atelier Dupont".into(),
-            type_client: TypeClient::Professionnel,
-            email: String::new(),
-            telephone: String::new(),
-            adresse: String::new(),
-            siren: String::new(),
-            tva_intracom: String::new(),
-            notes: String::new(),
-        })
-        .unwrap();
-        let mut form = Formulaire::document(TypeDocument::Facture);
-        form.champs[0].valeur = "dupont".into();
-        form.champs[4].valeur = "Maintenance".into();
-        form.champs[5].valeur = "2".into();
-        form.champs[6].valeur = "500,00".into();
-        let msg = soumettre_formulaire(&mut s, &form).unwrap();
-        assert!(msg.contains("FA-"));
-        let doc = s.documents(Some(TypeDocument::Facture)).unwrap().remove(0);
-        s.changer_statut(&doc.numero, StatutDocument::Valide).unwrap();
-        let pay = Formulaire::paiement(&doc, 100_000);
-        let msg = soumettre_formulaire(&mut s, &pay).unwrap();
-        assert!(msg.contains("Paiement enregistré"));
-        let doc = s.document_par_numero(&doc.numero).unwrap();
-        assert_eq!(doc.statut, StatutDocument::Paye);
+    fn un_formulaire_valide_cree_vraiment_un_client() {
+        let mut app = App::memoire();
+        let mut form = Formulaire::client();
+        form.champs[0].valeur = "Atelier Dupont".to_string();
+        form.champs[1].valeur = "professionnel".to_string();
+        form.champs[3].valeur = "Nice".to_string();
+        let commande = form.commande().unwrap();
+        let mut tampon: Vec<u8> = Vec::new();
+        app.executer(&commande, &mut tampon).unwrap();
+        let liste = lancer_cli(&mut app, "/clients");
+        assert!(liste.contains("Atelier Dupont"), "{liste}");
     }
 
     #[test]
-    fn formulaire_article_puis_vente() {
-        let mut s = Memoire::new();
-        let mut form = Formulaire::article();
-        form.champs[0].valeur = "Zara".into();
-        form.champs[1].valeur = "Veste".into();
-        form.champs[3].valeur = "100 % coton".into();
-        form.champs[5].valeur = "8,00".into();
-        soumettre_formulaire(&mut s, &form).unwrap();
-        let article = s.articles().unwrap().remove(0);
-        let mut vente = Formulaire::vente(&article);
-        vente.champs[0].valeur = "25,00".into();
-        vente.champs[1].valeur = "2,00".into();
-        let msg = soumettre_formulaire(&mut s, &vente).unwrap();
-        assert!(msg.contains("marge nette 15,00 €"));
-        assert_eq!(s.article_par_id(article.id).unwrap().statut, "vendu");
+    fn la_touche_n_ouvre_le_formulaire_de_l_onglet() {
+        let mut app = App::memoire();
+        let mut vue = Vue::nouvelle();
+        vue.onglet = 1; // clients
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('n')));
+        assert_eq!(
+            vue.formulaire.as_ref().map(|f| f.modele),
+            Some(Formulaire::client().modele)
+        );
+        vue.formulaire = None;
+        vue.onglet = 3; // factures
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('n')));
+        assert!(vue
+            .formulaire
+            .as_ref()
+            .map(|f| f.modele.starts_with("/factures nouveau"))
+            .unwrap_or(false));
     }
 
     #[test]
-    fn formulaire_societe_change_le_regime() {
-        let mut s = Memoire::new();
-        let mut form = Formulaire::societe(RegimeTva::Franchise);
-        form.defiler_choix(1);
-        soumettre_formulaire(&mut s, &form).unwrap();
-        assert_eq!(s.societe().unwrap().regime, RegimeTva::Reel);
+    fn les_fleches_changent_d_onglet_et_q_quitte() {
+        let mut app = App::memoire();
+        let mut vue = Vue::nouvelle();
+        assert!(vue.touche(&mut app, KeyEvent::from(KeyCode::Right)));
+        assert_eq!(vue.onglet, 1);
+        assert!(vue.touche(&mut app, KeyEvent::from(KeyCode::Left)));
+        assert_eq!(vue.onglet, 0);
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Left));
+        assert_eq!(vue.onglet, ONGLETS.len() - 1);
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('q')));
+        assert!(vue.quitter);
     }
 
     #[test]
-    fn contenu_tableau_de_bord_en_memoire() {
-        let mut s = Memoire::new();
-        let c = charger_contenu(&mut s, 0).unwrap();
-        assert!(c.lignes.iter().any(|l| l.contains("CA global")));
+    fn un_ecran_se_lit_sans_polluer_l_audit() {
+        let mut app = App::memoire();
+        app.executer("/clients nouveau --nom \"Zébulon\" --type particulier", &mut Vec::new())
+            .unwrap();
+        let avant = app.store.audit_complet().len();
+        let mut vue = Vue::nouvelle();
+        vue.onglet = 1;
+        vue.rafraichir(&mut app);
+        assert!(vue.lignes.iter().any(|l| l.contains("Zébulon")), "{:?}", vue.lignes);
+        let apres = app.store.audit_complet().len();
+        assert_eq!(avant, apres, "la navigation ne doit rien journaliser");
+    }
+
+    #[test]
+    fn le_tableau_de_bord_s_affiche_en_memoire() {
+        let mut app = App::memoire();
+        let mut vue = Vue::nouvelle();
+        vue.rafraichir(&mut app);
+        let contenu = vue.lignes.join("\n");
+        assert!(contenu.contains("tableau de bord"), "{contenu}");
+    }
+
+    #[test]
+    fn la_saisie_modifie_le_champ_actif() {
+        let mut form = Formulaire::recherche();
+        form.saisir('d');
+        form.saisir('u');
+        form.effacer();
+        assert_eq!(form.champs[0].valeur, "d");
+        form.avancer();
+        assert_eq!(form.focus, 0); // un seul champ : retour au même
     }
 }

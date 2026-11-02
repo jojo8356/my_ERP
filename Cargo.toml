@@ -1,16 +1,25 @@
 [package]
 name = "my-erp"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "ERP CLI en Rust — navigation par chemins, sans GUI (voir CDC-ERP-CLI.md)"
 license = "MIT"
+build = "build.rs"
 
 # Chromat : couleurs du CLI (ADR-004). Ratatui + Crossterm : TUI et
-# formulaires interactifs (ADR-005).
+# formulaires interactifs (ADR-005). Rustorm : schéma `.rsm`, client typé
+# généré à la compilation et migration PostgreSQL (ADR-006) — utilisé sans
+# base de données : le stockage local s'aligne sur les colonnes du schéma.
 [dependencies]
 chromat = { git = "https://github.com/jojo8356/chromat", tag = "v0.1.1" }
 ratatui = "0.29"
 crossterm = "0.28"
+rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0" }
+# Feature « postgres » volontairement absente : voir ADR-006 (aucune base en v1).
+# rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0", features = ["postgres"] }
+
+[build-dependencies]
+rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0" }
 
 [profile.release]
 opt-level = 3

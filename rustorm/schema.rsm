@@ -1,0 +1,268 @@
+// Schéma de l'ERP — source de vérité du modèle de données (CDC §8).
+//
+// Ce fichier est consommé à la compilation par `src/orm.rs` et `build.rs` :
+//   * `rustorm::schema::parse` le valide (toute faute bloque le build) ;
+//   * `rustorm::schema::generate` produit le client typé (Record + colonnes) ;
+//   * `rustorm::migrations::initial_sql` produit la migration PostgreSQL.
+//
+// Sans base de données (ADR-006), le stockage fichier s'appuie sur les
+// colonnes déclarées ici : un fichier tabulé par table, dont l'en-tête est
+// exactement `columns()` du modèle généré. Le jour où PostgreSQL arrive
+// (jalon J5), la migration est déjà écrite et les mêmes colonnes servent.
+//
+// Conventions : montants en centimes entiers (BigInt), taux en points de
+// base (Int : 2000 = 20 %), dates en texte ISO AAAA-MM-JJ (Europe/Paris),
+// aucune suppression physique (colonne rgpd_efface_le / statut annulé).
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "rustorm-client"
+}
+
+model Societe {
+  id BigInt @id @default(autoincrement())
+  nom String
+  forme_juridique String @default("micro-entreprise")
+  capital String @default("")
+  siren String @default("")
+  siret String @default("")
+  tva_intracom String @default("")
+  adresse String @default("")
+  code_postal String @default("")
+  ville String @default("")
+  pays String @default("FR")
+  email String @default("")
+  telephone String @default("")
+  regime_tva String @default("franchise")
+  devise String @default("EUR")
+  delai_paiement_jours Int @default(30)
+  penalites_taux_bp Int @default(1000)
+  indemnite_forfaitaire BigInt @default(4000)
+  cree_le String @default("")
+  @@index([nom])
+  @@map("societes")
+}
+
+model Utilisateur {
+  id BigInt @id @default(autoincrement())
+  nom_utilisateur String @unique
+  nom_complet String @default("")
+  email String @default("")
+  role String @default("utilisateur")
+  empreinte String @default("")
+  secret_totp String @default("")
+  codes_recuperation String @default("")
+  actif Boolean @default(true)
+  cree_le String @default("")
+  @@map("utilisateurs")
+}
+
+model Client {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  nom String
+  type_client String @default("professionnel")
+  email String @default("")
+  telephone String @default("")
+  adresse String @default("")
+  code_postal String @default("")
+  ville String @default("")
+  pays String @default("FR")
+  siren String @default("")
+  tva_intracom String @default("")
+  notes String @default("")
+  etiquettes String @default("")
+  reference_externe String @default("")
+  rgpd_efface_le String @default("")
+  cree_le String @default("")
+  modifie_le String @default("")
+  @@index([societe_id])
+  @@index([nom])
+  @@map("clients")
+}
+
+model Document {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  numero String
+  type_doc String
+  statut String @default("brouillon")
+  client_id BigInt
+  date_doc String
+  date_prestation String @default("")
+  echeance String @default("")
+  activite String @default("services")
+  devise String @default("EUR")
+  taux_change_micro BigInt @default(1000000)
+  conditions_paiement String @default("30 jours fin de mois")
+  delai_paiement_jours Int @default(30)
+  penalites_taux_bp Int @default(1000)
+  indemnite_forfaitaire BigInt @default(4000)
+  paye BigInt @default(0)
+  envoye_le String @default("")
+  motif String @default("")
+  cree_le String @default("")
+  @@index([societe_id])
+  @@index([numero])
+  @@index([client_id])
+  @@map("documents")
+}
+
+model Ligne {
+  id BigInt @id @default(autoincrement())
+  document_id BigInt
+  position Int @default(0)
+  designation String
+  quantite_milli BigInt @default(1000)
+  prix_unitaire_ht BigInt @default(0)
+  remise_bp Int @default(0)
+  tva_bp Int @default(2000)
+  article_id BigInt @default(0)
+  @@index([document_id])
+  @@map("lignes")
+}
+
+model Paiement {
+  id BigInt @id @default(autoincrement())
+  document_id BigInt
+  date_paiement String
+  montant BigInt
+  moyen String @default("virement")
+  reference String @default("")
+  rapproche Boolean @default(false)
+  @@index([document_id])
+  @@map("paiements")
+}
+
+model Ecriture {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  journal String
+  ecriture_num Int @default(0)
+  date_ecriture String
+  compte String
+  libelle String @default("")
+  debit BigInt @default(0)
+  credit BigInt @default(0)
+  piece_ref String @default("")
+  piece_date String @default("")
+  comp_aux_num String @default("")
+  comp_aux_lib String @default("")
+  devise String @default("EUR")
+  lettrage String @default("")
+  document_id BigInt @default(0)
+  paiement_id BigInt @default(0)
+  @@index([societe_id])
+  @@index([journal])
+  @@map("ecritures")
+}
+
+model Article {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  marque String @default("")
+  description String
+  taille String @default("")
+  composition String
+  etat String @default("très bon")
+  prix_achat BigInt @default(0)
+  date_achat String @default("")
+  statut String @default("en_stock")
+  regime String @default("achat_revente")
+  photos String @default("")
+  sku String @default("")
+  quantite Int @default(1)
+  cree_le String @default("")
+  @@index([societe_id])
+  @@index([marque])
+  @@map("articles")
+}
+
+model Vente {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  article_id BigInt
+  date_vente String
+  prix_vente BigInt @default(0)
+  frais BigInt @default(0)
+  plateforme String @default("Vinted")
+  acheteur String @default("")
+  reference String @default("")
+  regime String @default("achat_revente")
+  cree_le String @default("")
+  @@index([societe_id])
+  @@index([article_id])
+  @@map("ventes")
+}
+
+model TauxChange {
+  id BigInt @id @default(autoincrement())
+  devise String
+  date_taux String
+  taux_micro BigInt @default(1000000)
+  source String @default("manuel")
+  @@index([devise])
+  @@map("taux_change")
+}
+
+model OperationBancaire {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  date_operation String
+  libelle String @default("")
+  montant BigInt @default(0)
+  reference String @default("")
+  paiement_id BigInt @default(0)
+  @@index([societe_id])
+  @@map("operations_bancaires")
+}
+
+model EntreeAudit {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  horodatage String
+  utilisateur String @default("local")
+  action String
+  detail String @default("")
+  empreinte_precedente String @default("")
+  empreinte String @default("")
+  @@index([societe_id])
+  @@map("audit_log")
+}
+
+model Sequence {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  type_doc String
+  annee Int @default(0)
+  valeur Int @default(0)
+  @@map("sequences")
+}
+
+model Sauvegarde {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  date_sauvegarde String
+  chemin String
+  empreinte String @default("")
+  taille_octets BigInt @default(0)
+  @@map("sauvegardes")
+}
+
+model Recurrence {
+  id BigInt @id @default(autoincrement())
+  societe_id BigInt
+  client_id BigInt
+  type_doc String @default("facture")
+  activite String @default("services")
+  periodicite String @default("mensuelle")
+  prochaine_le String
+  lignes String @default("")
+  actif Boolean @default(true)
+  libelle String @default("")
+  @@map("recurrences")
+}
