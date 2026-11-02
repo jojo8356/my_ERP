@@ -499,7 +499,8 @@ etape_base() {
   fi
 
   # 7.5 tests d'intégration Rust (ignorés par défaut, exécutés ici)
-  if ERP_DATABASE_URL="$BASE_URL" cargo test --features postgres -- --ignored \
+  # Ces tests partagent la même base et la vident : ils doivent tourner en série.
+  if ERP_DATABASE_URL="$BASE_URL" cargo test --features postgres -- --ignored --test-threads=1 \
        >"$LOGS/tests-bdd.log" 2>&1; then
     printf '  %s✓%s tests d’intégration PostgreSQL (%s)\n' "$VERT" "$NEUTRE" \
       "$(grep -hoE 'test result: ok\. [0-9]+ passed' "$LOGS/tests-bdd.log" | tail -1)" >&2

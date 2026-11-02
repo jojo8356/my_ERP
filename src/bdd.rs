@@ -469,6 +469,10 @@ mod tests {
 /// (`cargo test --features postgres -- --ignored`) avec une variable
 /// `ERP_DATABASE_URL` pointant sur une base jetable. Le reste de la suite ne
 /// dépend donc jamais d'un serveur (ENF-SIMPL-01).
+///
+/// Ils partagent **la même base** : chacun la vide avant de travailler, donc ils
+/// doivent tourner en série (`--test-threads=1`, ce que fait `test-all.sh`) —
+/// sinon un test qui vide la base fait échouer le comptage d'un autre.
 #[cfg(test)]
 mod integration {
     use crate::cli::App;
