@@ -270,7 +270,7 @@ fn aide_contexte(chemin: &[String]) -> &'static str {
 /clients nouveau --nom … --type pro|particulier|association [--prospect]
 /clients <recherche>         fiche (statut, dernier contact, historique, encours)
 /clients <recherche> factures
-/clients <recherche> note "…"         ajoute une note datée (journal de la fiche)
+/clients <recherche> note \"…\"         ajoute une note datée (journal de la fiche)
 /clients <recherche> notes            liste      |  notes supprimer <n°>
 /clients <recherche> statut client|prospect   bascule (utilisée par la TUI)
 /clients <recherche> convertir        prospect → client (débloque la facturation)
