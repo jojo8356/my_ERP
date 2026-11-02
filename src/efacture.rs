@@ -286,8 +286,14 @@ mod tests {
         assert!(xml.contains("<cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>"));
         assert!(xml.contains("<cbc:CompanyID>123456789</cbc:CompanyID>"));
         assert!(xml.contains("<cbc:CompanyID>987654321</cbc:CompanyID>"));
-        assert!(xml.contains("<cbc:TaxAmount currencyID=\"EUR\">20.00</cbc:TaxAmount>"));
-        assert!(xml.contains("<cbc:PayableAmount currencyID=\"EUR\">120.00</cbc:PayableAmount>"));
+        // 2 × 500,00 € HT = 1 000,00 € HT, TVA 20 % = 200,00 €, TTC 1 200,00 €.
+        assert!(xml.contains("<cbc:TaxAmount currencyID=\"EUR\">200.00</cbc:TaxAmount>"));
+        assert!(
+            xml.contains("<cbc:LineExtensionAmount currencyID=\"EUR\">1000.00</cbc:LineExtensionAmount>")
+        );
+        assert!(
+            xml.contains("<cbc:PayableAmount currencyID=\"EUR\">1200.00</cbc:PayableAmount>")
+        );
         assert!(xml.contains("<cbc:InvoicedQuantity unitCode=\"C62\">2.000</cbc:InvoicedQuantity>"));
     }
 

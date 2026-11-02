@@ -1531,7 +1531,8 @@ mod tests {
         // 1 USD = 0,92 EUR → 100,00 USD = 92,00 EUR
         assert_eq!(convertir(10_000, 920_000), 9_200);
         assert_eq!(convertir(10_000, 1_000_000), 10_000);
-        assert_eq!(parse_taux("0,92").unwrap(), 9_200);
+        // Le taux est stocké en millionièmes : 0,92 EUR par unité = 920 000.
+        assert_eq!(parse_taux("0,92").unwrap(), 920_000);
     }
 
     #[test]

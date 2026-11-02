@@ -3232,11 +3232,14 @@ mod tests {
     fn vinted_par_le_cli() {
         let mut app = app();
         lancer(&mut app, "/vinted nouveau --marque Zara --description \"Veste\" --taille M --composition \"100 % coton\" --prix-achat 8,00");
-        let texte = lancer(&mut app, "/vinted vendre 1 --prix 25,00 --frais 2,00");
+        // L'identifiant d'article est alloué par le magasin : on le lit plutôt
+        // que de le supposer (les autres tables partagent le compteur).
+        let article = app.store.articles()[0].id;
+        let texte = lancer(&mut app, &format!("/vinted vendre {article} --prix 25,00 --frais 2,00"));
         assert!(texte.contains("marge nette 15,00 €"), "{texte}");
         let texte = lancer(&mut app, "/vinted stats");
         assert!(texte.contains("DAC7"), "{texte}");
-        let texte = lancer(&mut app, "/vinted fiche 1");
+        let texte = lancer(&mut app, &format!("/vinted fiche {article}"));
         assert!(texte.contains("Composition"), "{texte}");
     }
 
