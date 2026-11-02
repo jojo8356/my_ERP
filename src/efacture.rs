@@ -69,6 +69,27 @@ fn adresse_xml(client: &Client) -> String {
     )
 }
 
+/// Catégorie de TVA EN 16931 : `E` = exonérée, `S` = taux normal.
+fn categorie(taux_bp: i32, regime: RegimeTva) -> &'static str {
+    if taux_bp == 0 || regime == RegimeTva::Franchise {
+        "E"
+    } else {
+        "S"
+    }
+}
+
+/// Motif d'exonération obligatoire pour une ligne à 0 % : la franchise en base
+/// de la micro-entreprise (art. 293 B du CGI) correspond au code européen
+/// `VATEX-EU-132`. Sans ce code, une e-facture 0 % est rejetée (EN 16931).
+fn raison_exoneration(regime: RegimeTva) -> &'static str {
+    match regime {
+        RegimeTva::Franchise => {
+            "<cbc:TaxExemptionReasonCode>VATEX-EU-132</cbc:TaxExemptionReasonCode>"
+        }
+        RegimeTva::Reel => "",
+    }
+}
+
 /// Facture (ou avoir) au format UBL 2.1, profil EN 16931.
 pub fn ubl(societe: &Societe, client: &Client, document: &Document, regime: RegimeTva) -> String {
     let totaux = document.totaux(regime);
@@ -184,13 +205,18 @@ pub fn ubl(societe: &Societe, client: &Client, document: &Document, regime: Regi
         xml.push_str(&format!(
             "    <cac:TaxSubtotal>\n      <cbc:TaxableAmount currencyID=\"{dev}\">{base}</cbc:TaxableAmount>\n      \
              <cbc:TaxAmount currencyID=\"{dev}\">{tva}</cbc:TaxAmount>\n      \
-             <cac:TaxCategory><cbc:ID>{categorie}</cbc:ID><cbc:Percent>{pct}</cbc:Percent>\
+             <cac:TaxCategory><cbc:ID>{categorie}</cbc:ID><cbc:Percent>{pct}</cbc:Percent>{exemption}\
              <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory>\n    </cac:TaxSubtotal>\n",
             dev = xml_echapper(devise),
             base = montant_ubl(taux.base_ht),
             tva = montant_ubl(taux.tva),
-            categorie = if taux.taux_bp == 0 { "E" } else { "S" },
-            pct = format!("{:.2}", f64::from(taux.taux_bp) / 100.0)
+            categorie = categorie(taux.taux_bp, regime),
+            pct = if regime == RegimeTva::Franchise {
+                "0.00".to_string()
+            } else {
+                format!("{:.2}", f64::from(taux.taux_bp) / 100.0)
+            },
+            exemption = raison_exoneration(regime)
         ));
     }
     xml.push_str("  </cac:TaxTotal>\n");

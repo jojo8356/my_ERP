@@ -443,7 +443,12 @@ mod tests {
         assert!(texte.contains("SIREN 123456789"));
         assert!(texte.contains("Indemnit"));
         assert!(texte.contains("Total TTC"));
-        assert!(texte.contains("Échéance"));
+        // Les accents sont encodés en WinAnsi (1 octet) : « Échéance » n'est
+        // pas de l'UTF-8 dans le flux, on vérifie donc les octets exacts.
+        assert!(
+            octets.windows(8).any(|f| f == b"\xC9ch\xE9ance"),
+            "libellé « Échéance » absent du flux PDF"
+        );
     }
 
     #[test]

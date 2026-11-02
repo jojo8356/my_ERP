@@ -1019,13 +1019,17 @@ impl Store {
 
     pub fn document_par_numero(&self, numero: &str) -> Resultat<Document> {
         let recherche = numero.trim();
+        let societe_id = self.societe_courante;
         self.documents
             .iter()
-            .find(|d| d.numero.eq_ignore_ascii_case(recherche))
+            .find(|d| d.societe_id == societe_id && d.numero.eq_ignore_ascii_case(recherche))
             .or_else(|| {
                 // Forme courte « 2026/0042 » ou « 0042 » du CDC §6.1.
                 let propre: String = recherche.chars().filter(|c| c.is_ascii_digit()).collect();
                 self.documents.iter().find(|d| {
+                    if d.societe_id != societe_id {
+                        return false;
+                    }
                     let chiffres: String = d.numero.chars().filter(|c| c.is_ascii_digit()).collect();
                     !propre.is_empty() && chiffres == propre
                 })
@@ -1088,10 +1092,12 @@ impl Store {
         let annee = annee_de(&nouveau.date_doc);
         let sequence = self.prochaine_sequence(societe.id, nouveau.type_doc, annee);
         let numero = numero_document(nouveau.type_doc, annee, sequence);
+        // La numérotation est propre à chaque société : le même numéro peut
+        // exister dans deux sociétés, mais jamais deux fois dans la même.
         if self
             .documents
             .iter()
-            .any(|d| d.numero.eq_ignore_ascii_case(&numero))
+            .any(|d| d.societe_id == societe.id && d.numero.eq_ignore_ascii_case(&numero))
         {
             return Err(format!(
                 "numéro {numero} déjà utilisé : la numérotation doit rester sans trou (EF-FAC-02)"
@@ -1178,9 +1184,10 @@ impl Store {
     }
 
     fn index_document(&self, numero: &str) -> Resultat<usize> {
+        let societe_id = self.societe_courante;
         self.documents
             .iter()
-            .position(|d| d.numero.eq_ignore_ascii_case(numero.trim()))
+            .position(|d| d.societe_id == societe_id && d.numero.eq_ignore_ascii_case(numero.trim()))
             .ok_or_else(|| format!("document « {numero} » introuvable"))
     }
 

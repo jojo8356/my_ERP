@@ -25,22 +25,27 @@ jobs:
           export ERP_DONNEES_DIR=/tmp/erp-demo
           bash scripts/scenario-demo.sh > /tmp/scenario.log 2>&1; code=$?
           tail -30 /tmp/scenario.log; exit $code
-      - name: Diagnostic (erreurs de compilation visibles dans l'onglet Annotations)
+      - name: Diagnostic (erreurs et échecs de test dans l'onglet Annotations)
         if: failure()
         run: |
           python3 - <<'PY'
-          import os
+          import os, re
           for chemin in ("/tmp/build.log", "/tmp/tests.log", "/tmp/scenario.log"):
               if not os.path.exists(chemin):
                   continue
               lignes = open(chemin, encoding="utf-8", errors="replace").read().splitlines()
               print(f"::group::{chemin} ({len(lignes)} lignes)")
               for i, ligne in enumerate(lignes):
-                  if ligne.startswith("error") or " panicked at " in ligne:
-                      for extra in [ligne] + lignes[i + 1:i + 4]:
+                  interessant = (
+                      ligne.startswith("error")
+                      or ligne.startswith("---- ")
+                      or " panicked at " in ligne
+                      or re.match(r"^\s*(left|right): ", ligne)
+                      or "assertion" in ligne
+                  )
+                  if interessant:
+                      for extra in [ligne] + lignes[i + 1:i + 5]:
                           if extra.strip():
                               print("::error::" + extra.replace("%", "%25"))
-                      print("::endgroup::")
-                      print(f"::group::{chemin} (suite)")
               print("::endgroup::")
           PY

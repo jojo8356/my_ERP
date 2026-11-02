@@ -356,7 +356,12 @@ mod tests {
     fn courriel_facture_complet() {
         let courriel = courriel_document(&societe(), &client(), &facture(), RegimeTva::Franchise);
         assert!(courriel.sujet.contains("FA-2026-0001"));
-        assert!(courriel.corps.contains("100,00 €"));
+        // 2 × 500,00 € HT. `format_eur` emploie l'espace fine insécable.
+        assert!(
+            courriel.corps.contains(&format_eur(100_000)),
+            "{}",
+            courriel.corps
+        );
         assert_eq!(courriel.pieces.len(), 1);
         let message = enveloppe(&courriel);
         assert!(message.contains("To: achat@dupont.fr"));
