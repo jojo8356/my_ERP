@@ -122,4 +122,19 @@ $ERP /factures nouvelle --client particulier --ligne "Dépannage;1;10,00" | grep
 $ERP /factures nouvelle --client particulier --ligne "Dépannage;1;40,00" | grep "facture obligatoire"
 $ERP /factures nouvelle --client particulier --ligne "Dépannage;1;5,00" --sur-demande |
   grep "demandée"
+echo "── 17. Prospects et clients (CDC Module A)"
+$ERP /clients nouveau --nom "Piste Médicale" --type pro --prospect --email piste@exemple.fr |
+  grep "Prospect n°"
+$ERP /prospects | grep "Piste Médicale"
+$ERP /clients --clients | grep -v "Piste Médicale" >/dev/null
+$ERP /devis nouvelle --client piste --ligne "Audit sécurité;1;900,00" | grep "Devis"
+DEVIS=$($ERP /devis --csv | sed -n '2p' | cut -d';' -f1)
+$ERP /devis "$DEVIS" envoyer >/dev/null
+$ERP /devis "$DEVIS" accepter >/dev/null
+# Un prospect ne se facture pas tant qu'il n'est pas converti.
+if $ERP /devis "$DEVIS" transformer 2>&1 | grep -q "transformé"; then
+  echo "✗ un devis de prospect a été transformé en facture" >&2; exit 1
+fi
+$ERP /clients piste convertir | grep "converti en client"
+$ERP /devis "$DEVIS" transformer | grep "transformé en facture"
 echo "✅ Scénario terminé"

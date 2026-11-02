@@ -432,6 +432,7 @@ pub fn encoder_client(c: &Client) -> Resultat<Vec<String>> {
         .n("societe_id", c.societe_id)
         .t("nom", &c.nom)
         .t("type_client", c.type_client.code())
+        .t("statut_client", c.statut.code())
         .t("email", &c.email)
         .t("telephone", &c.telephone)
         .t("adresse", &c.adresse)
@@ -455,6 +456,7 @@ pub fn decoder_client(l: &LigneTable) -> Resultat<Client> {
         societe_id: l.entier("societe_id"),
         nom: l.texte("nom"),
         type_client: TypeClient::depuis_code(&l.texte("type_client")),
+        statut: StatutClient::depuis_code(&l.texte("statut_client")),
         email: l.texte("email"),
         telephone: l.texte("telephone"),
         adresse: l.texte("adresse"),
@@ -891,6 +893,7 @@ mod tests {
             .n("societe_id", 1)
             .t("nom", "Atelier Dupont")
             .t("type_client", "professionnel")
+            .t("statut_client", "prospect")
             .t("email", "a@b.fr")
             .t("telephone", "")
             .t("adresse", "1 rue des\tTabulations")
@@ -915,6 +918,8 @@ mod tests {
         assert_eq!(client.notes, "ligne 1\nligne 2");
         assert_eq!(client.etiquettes, vec!["maintenance", "urgent"]);
         assert_eq!(client.type_client, TypeClient::Professionnel);
+        // Le statut de la fiche est persisté avec le reste (prospect/client).
+        assert_eq!(client.statut, StatutClient::Prospect);
         let _ = std::fs::remove_dir_all(&dossier);
     }
 

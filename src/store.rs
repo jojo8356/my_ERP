@@ -1107,6 +1107,93 @@ impl Store {
             .collect()
     }
 
+    /// Clients filtrés par statut (prospect ou client).
+    pub fn clients_par_statut(&self, statut: StatutClient) -> Vec<Client> {
+        self.clients()
+            .into_iter()
+            .filter(|c| c.statut == statut)
+            .collect()
+    }
+
+    pub fn prospects(&self) -> Vec<Client> {
+        self.clients_par_statut(StatutClient::Prospect)
+    }
+
+    pub fn clients_actifs(&self) -> Vec<Client> {
+        self.clients_par_statut(StatutClient::Client)
+    }
+
+    /// Convertit un prospect en client (CDC Module A). Sans effet s'il l'est
+    /// déjà : le message le dit plutôt que de faire semblant.
+    pub fn convertir_client(&mut self, id: i64) -> Resultat<Client> {
+        let mut client = self.client_par_id(id)?;
+        if !client.est_prospect() {
+            return Err(format!("{} est déjà un client", client.nom));
+        }
+        client.statut = StatutClient::Client;
+        client.modifie_le = aujourdhui();
+        let client = self.modifier_client(client)?;
+        Ok(client)
+    }
+
+    /// Date du dernier contact connu avec une fiche : dernière pièce émise
+    /// (devis, facture…), dernier paiement, sinon création/modification.
+    ///
+    /// C'est cette date qui borne la conservation RGPD-02 (« prospects :
+    /// 3 ans après le dernier contact »).
+    pub fn dernier_contact(&self, client_id: i64) -> String {
+        let mut dates: Vec<&str> = Vec::new();
+        if let Some(client) = self.clients.iter().find(|c| c.id == client_id) {
+            dates.push(client.cree_le.as_str());
+            dates.push(client.modifie_le.as_str());
+        }
+        let documents: Vec<&Document> = self
+            .documents
+            .iter()
+            .filter(|d| d.client_id == client_id && d.societe_id == self.societe_courante)
+            .collect();
+        for document in &documents {
+            dates.push(document.date_doc.as_str());
+            dates.push(document.envoye_le.as_str());
+            dates.push(document.date_prestation.as_str());
+        }
+        for paiement in self
+            .paiements
+            .iter()
+            .filter(|p| documents.iter().any(|d| d.id == p.document_id))
+        {
+            dates.push(paiement.date_paiement.as_str());
+        }
+        dates
+            .into_iter()
+            .filter(|d| crate::domain::date_valide(d))
+            .max()
+            .unwrap_or("")
+            .to_string()
+    }
+
+    /// Prospects dont le dernier contact est antérieur à la durée de
+    /// conservation (3 ans, RGPD-02) : à anonymiser ou à convertir.
+    ///
+    /// Renvoie des couples (prospect, date de dernier contact).
+    pub fn prospects_perimes(&self, reference: &str) -> Vec<(Client, String)> {
+        let limite = crate::domain::retirer_annees(
+            reference,
+            StatutClient::Prospect.conservation_annees(),
+        );
+        let mut sortie: Vec<(Client, String)> = self
+            .prospects()
+            .into_iter()
+            .map(|client| {
+                let contact = self.dernier_contact(client.id);
+                (client, contact)
+            })
+            .filter(|(_, contact)| !contact.is_empty() && *contact < limite)
+            .collect();
+        sortie.sort_by(|a, b| a.1.cmp(&b.1));
+        sortie
+    }
+
     pub fn creer_client(&mut self, mut client: Client) -> Resultat<Client> {
         if client.nom.trim().is_empty() {
             return Err("le nom du client est obligatoire".into());
@@ -1535,6 +1622,15 @@ impl Store {
         }
         let societe = self.societe()?;
         let client = self.client_par_id(document.client_id)?;
+        // Une facture est une pièce comptable : on ne facture pas un prospect
+        // (CDC Module A). Le devis, lui, est justement l'outil de prospection.
+        if document.type_doc == TypeDocument::Facture && client.est_prospect() {
+            return Err(format!(
+                "{} est encore un prospect : convertissez la fiche en client avant de \
+                 valider une facture — /clients {} convertir",
+                client.nom, client.nom
+            ));
+        }
         let controle = controle_mentions(&societe, &client, &document);
         if !controle.conforme() {
             return Err(format!(
@@ -1610,6 +1706,16 @@ impl Store {
             return Err(format!(
                 "devis {} : aucune transformation possible",
                 devis.statut.as_str()
+            ));
+        }
+        // Une facture ne se crée pas pour un prospect : le devis reste une
+        // proposition commerciale tant que la fiche n'est pas convertie.
+        let client = self.client_par_id(devis.client_id)?;
+        if client.est_prospect() {
+            return Err(format!(
+                "{} est encore un prospect : convertissez la fiche en client avant de \
+                 transformer le devis — /clients {} convertir",
+                client.nom, client.nom
             ));
         }
         self.changer_statut(numero, StatutDocument::Accepte)?;
@@ -2952,6 +3058,86 @@ mod tests {
         assert!(s.exiger_admin().is_err());
         s.fermer_session().unwrap();
         assert_eq!(s.session(), "local");
+    }
+
+    #[test]
+    fn prospects_clients_conversion_et_filtres() {
+        let mut s = Store::memoire();
+        societe_complete(&mut s);
+        let prospect = s
+            .creer_client(Client::prospect("Piste Nice", TypeClient::Professionnel))
+            .unwrap();
+        s.creer_client(Client::nouveau("Client Nice", TypeClient::Professionnel))
+            .unwrap();
+        assert_eq!(s.prospects().len(), 1);
+        assert_eq!(s.clients_actifs().len(), 1);
+        assert_eq!(s.clients().len(), 2, "les deux fiches sont listées");
+        assert_eq!(s.prospects()[0].nom, "Piste Nice");
+
+        // Un prospect peut recevoir un devis…
+        let devis = s
+            .creer_document(
+                NouveauDocument::nouveau(TypeDocument::Devis, prospect.id, "2026-10-30")
+                    .avec_activite("services")
+                    .avec_lignes(vec![Ligne::new("Maintenance", 2.0, 50_000, 2000)]),
+            )
+            .unwrap();
+        assert!(s.valider_document(&devis.numero).is_ok());
+
+        // …mais pas une facture, même en forçant la main (le refus porte sur le
+        // statut, pas sur les mentions : la société est complète).
+        let facture = facture_test(&mut s, prospect.id);
+        let erreur = s.valider_document(&facture.numero).unwrap_err();
+        assert!(erreur.contains("encore un prospect"), "{erreur}");
+        assert!(erreur.contains("convertir"), "{erreur}");
+
+        // La conversion débloque la facturation et n'est pas rejouable.
+        let converti = s.convertir_client(prospect.id).unwrap();
+        assert!(!converti.est_prospect());
+        assert!(!converti.modifie_le.is_empty());
+        assert!(s.valider_document(&facture.numero).is_ok());
+        assert_eq!(s.prospects().len(), 0);
+        assert_eq!(s.clients_actifs().len(), 2);
+        let erreur = s.convertir_client(prospect.id).unwrap_err();
+        assert!(erreur.contains("déjà un client"), "{erreur}");
+    }
+
+    #[test]
+    fn dernier_contact_et_prospects_perimes_rgpd() {
+        let mut s = Store::memoire();
+        societe_complete(&mut s);
+        // Prospect vivant : un devis daté d'aujourd'hui.
+        let vivant = s
+            .creer_client(Client::prospect("Piste récente", TypeClient::Professionnel))
+            .unwrap();
+        s.creer_document(
+            NouveauDocument::nouveau(TypeDocument::Devis, vivant.id, "2026-11-02")
+                .avec_activite("services")
+                .avec_lignes(vec![Ligne::new("Étude", 1.0, 10_000, 2_000)]),
+        )
+        .unwrap();
+        // Prospect dormant : aucune pièce, fiche créée il y a plus de 3 ans.
+        let dormant = s
+            .creer_client(Client::prospect("Piste ancienne", TypeClient::Professionnel))
+            .unwrap();
+        let mut ancien = s.client_par_id(dormant.id).unwrap();
+        ancien.cree_le = "2022-01-15".to_string();
+        ancien.notes = "piste froide".to_string();
+        s.modifier_client(ancien).unwrap();
+        let idx = s.clients.iter().position(|c| c.id == dormant.id).unwrap();
+        s.clients[idx].cree_le = "2022-01-15".to_string();
+        s.clients[idx].modifie_le = "2022-01-15".to_string();
+
+        assert_eq!(s.dernier_contact(vivant.id), "2026-11-02");
+        assert_eq!(s.dernier_contact(dormant.id), "2022-01-15");
+        let perimes = s.prospects_perimes("2026-11-02");
+        assert_eq!(perimes.len(), 1, "{perimes:?}");
+        assert_eq!(perimes[0].0.nom, "Piste ancienne");
+        assert_eq!(perimes[0].1, "2022-01-15");
+        // Un client (non prospect) n'est jamais « périmé » de la même façon :
+        // sa conservation est comptable (10 ans).
+        s.convertir_client(dormant.id).unwrap();
+        assert!(s.prospects_perimes("2026-11-02").is_empty());
     }
 
     #[test]

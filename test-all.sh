@@ -362,6 +362,13 @@ etape_recette() {
   else
     printf '  %s✗%s sortie JSON des listes\n' "$ROUGE" "$NEUTRE" >&2; echecs=$((echecs+1))
   fi
+  if "$BIN" /clients --csv 2>/dev/null | head -1 | grep -q 'statut'; then
+    printf '  %s✓%s statut prospect/client dans l’export CSV\n' "$VERT" "$NEUTRE" >&2
+  else
+    printf '  %s✗%s colonne statut absente de l’export CSV des clients\n' "$ROUGE" "$NEUTRE" >&2
+    echecs=$((echecs + 1))
+  fi
+
   if "$BIN" /factures --csv 2>/dev/null | head -1 | grep -q 'numero'; then
     printf '  %s✓%s export CSV des listes\n' "$VERT" "$NEUTRE" >&2
   else

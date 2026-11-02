@@ -110,18 +110,24 @@ impl Formulaire {
         }
     }
 
-    /// Formulaire de création de client (EF-CRM-01).
+    /// Formulaire de création de client **ou de prospect** (EF-CRM-01).
+    /// Le statut est pré-rempli à « client » : appuyer sur Entrée crée un
+    /// client, taper « prospect » crée une piste commerciale.
     pub fn client() -> Self {
-        Self::nouveau(
-            "Nouveau client",
-            "/clients nouveau --nom \"{nom}\" --type {type} --email \"{email}\" --ville \"{ville}\"",
+        let mut form = Self::nouveau(
+            "Nouveau client / prospect",
+            "/clients nouveau --nom \"{nom}\" --type {type} --statut {statut} \
+             --email \"{email}\" --ville \"{ville}\"",
             vec![
                 Champ::new("nom", "Nom", true, "raison sociale ou nom+prénom"),
                 Champ::new("type", "Type", true, "particulier | professionnel | association"),
+                Champ::new("statut", "Statut", false, "client (défaut) ou prospect"),
                 Champ::new("email", "E-mail", false, "facultatif, sert à l'envoi"),
                 Champ::new("ville", "Ville", false, "facultatif"),
             ],
-        )
+        );
+        form.champs[2].valeur = "client".to_string();
+        form
     }
 
     /// Formulaire de création de document (devis ou facture).
@@ -821,12 +827,16 @@ mod tests {
         form.champs[0].valeur = "Dupont SARL".to_string();
         form.champs[1].valeur = "professionnel".to_string();
         // « Dupont SARL » contient une espace : elle doit être préservée
-        // (le CLI découpe les guillemets lui-même).
+        // (le CLI découpe les guillemets lui-même). Le statut est pré-rempli.
         let commande = form.commande().unwrap();
         assert_eq!(
             commande,
-            "/clients nouveau --nom \"Dupont SARL\" --type professionnel"
+            "/clients nouveau --nom \"Dupont SARL\" --type professionnel --statut client"
         );
+        // Le même formulaire crée un prospect.
+        form.champs[2].valeur = "prospect".to_string();
+        let commande = form.commande().unwrap();
+        assert!(commande.ends_with("--statut prospect"), "{commande}");
     }
 
     #[test]
@@ -843,7 +853,7 @@ mod tests {
         let mut form = Formulaire::client();
         form.champs[0].valeur = "Atelier Dupont".to_string();
         form.champs[1].valeur = "professionnel".to_string();
-        form.champs[3].valeur = "Nice".to_string();
+        form.champs[4].valeur = "Nice".to_string();
         let commande = form.commande().unwrap();
         let mut tampon: Vec<u8> = Vec::new();
         app.executer(&commande, &mut tampon).unwrap();

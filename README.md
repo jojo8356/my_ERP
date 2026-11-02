@@ -43,7 +43,7 @@ Navigation par **chemins type URL** et raccourcis, comme exigé dans le
 conforme + e-facture UBL/EN 16931, envoi e-mail (RFC 5322), relances graduées,
 comptabilité (écritures, TVA, FEC, balance, rapprochement bancaire), seuils
 micro-entreprise, achat-revente Vinted (marges, rotation, alerte DAC7),
-multi-sociétés, multi-devises, utilisateurs/rôles/2FA (application TOTP **ou**
+prospects et clients, multi-sociétés, multi-devises, utilisateurs/rôles/2FA (application TOTP **ou**
 code à usage unique envoyé par e-mail), et journal d’audit chaîné.
 Le détail exigence par exigence est dans **[CONFORMITE-CDC.md](CONFORMITE-CDC.md)**.
 
@@ -77,6 +77,26 @@ Dossier modifiable via `ERP_DONNEES_DIR` ou `--donnees <dossier>` ; `--memoire`
 = démonstration sans écriture disque. L’ancien `etat.tsv` de la v1 est importé
 automatiquement au premier démarrage (ENF-PORT-01). Sauvegarde = `/admin
 sauvegarde` (ou copie du dossier) ; restauration = `/admin restaurer <nom>`.
+
+### Prospects et clients
+
+Une fiche naît **prospect** (piste commerciale) ou **client** ; les deux se
+créent de la même façon, le statut se change ensuite en une commande :
+
+```bash
+./target/release/my-erp /clients nouveau --nom "Piste Médicale" --type pro --prospect
+./target/release/my-erp /prospects                       # alias de /clients --prospects
+./target/release/my-erp /clients "piste médicale"        # fiche : statut + dernier contact
+./target/release/my-erp /devis nouvelle --client piste --ligne "Audit;1;900,00"
+./target/release/my-erp /clients piste convertir         # prospect → client
+./target/release/my-erp /clients piste prospect          # retour en piste
+```
+
+Un prospect peut recevoir des **devis** ; la **facture** est refusée tant que la
+fiche n'est pas convertie (message qui donne la commande exacte). Filtres :
+`--prospects`, `--clients`, `--perimes` (RGPD-02 : prospects sans contact depuis
+plus de 3 ans, à anonymiser ou convertir). Le statut apparaît dans la liste, la
+fiche, le CSV et le JSON, et le formulaire de la TUI propose « client » par défaut.
 
 ### Deux règles de conformité appliquées, pas seulement documentées
 

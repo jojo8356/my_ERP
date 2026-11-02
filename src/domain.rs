@@ -241,6 +241,21 @@ pub fn jours_entre(debut: &str, fin: &str) -> i64 {
     }
 }
 
+/// Recule de `annees` années, en gardant le mois et le jour quand ils existent
+/// (29 février → 28 février si l'année d'arrivée n'est pas bissextile).
+/// Sert aux durées de conservation RGPD-02 (« prospects : 3 ans après le
+/// dernier contact »).
+pub fn retirer_annees(date: &str, annees: u32) -> String {
+    match decouper_date(date) {
+        Some((a, m, j)) => {
+            let annee = a.saturating_sub(annees).max(1);
+            let jour = j.min(jours_du_mois(annee, m));
+            format!("{annee:04}-{m:02}-{jour:02}")
+        }
+        None => date.to_string(),
+    }
+}
+
 /// « 2026-10-30 » → « 30/10/2026 ».
 pub fn date_fr(date: &str) -> String {
     match decouper_date(date) {
@@ -736,12 +751,68 @@ impl TypeClient {
 /// Seuil au-delà duquel un particulier doit recevoir une facture (CDC §11.2).
 pub const SEUIL_FACTURE_PARTICULIER: Cents = 2_500;
 
+/// Cycle de vie d'une fiche (CDC Module A : « fiches clients/prospects »).
+///
+/// Un **prospect** est une fiche créée pour une piste commerciale : elle sert à
+/// établir un devis, mais aucune facture ne peut être émise tant qu'elle n'a pas
+/// été convertie en client (`/clients <nom> convertir`) — on ne facture pas
+/// quelqu'un qui n'a pas encore contracté.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatutClient {
+    Prospect,
+    Client,
+}
+
+impl Default for StatutClient {
+    fn default() -> Self {
+        Self::Client
+    }
+}
+
+impl StatutClient {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Prospect => "prospect",
+            Self::Client => "client",
+        }
+    }
+    pub fn libelle(&self) -> &'static str {
+        self.code()
+    }
+    pub fn symbole(&self) -> &'static str {
+        match self {
+            Self::Prospect => "○",
+            Self::Client => "●",
+        }
+    }
+    pub fn depuis_code(code: &str) -> Self {
+        match code.trim().to_lowercase().as_str() {
+            "prospect" | "prospects" | "piste" | "lead" => Self::Prospect,
+            _ => Self::Client,
+        }
+    }
+    pub fn est_prospect(&self) -> bool {
+        matches!(self, Self::Prospect)
+    }
+    /// Durée de conservation par défaut quand aucun document n'est conservé
+    /// (RGPD-02) : prospects 3 ans après le dernier contact, clients 10 ans
+    /// après la fin de la relation (obligation comptable).
+    pub fn conservation_annees(&self) -> u32 {
+        match self {
+            Self::Prospect => 3,
+            Self::Client => 10,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Client {
     pub id: i64,
     pub societe_id: i64,
     pub nom: String,
     pub type_client: TypeClient,
+    /// Prospect (piste) ou client (relation établie).
+    pub statut: StatutClient,
     pub email: String,
     pub telephone: String,
     pub adresse: String,
@@ -766,6 +837,7 @@ impl Default for Client {
             societe_id: 0,
             nom: String::new(),
             type_client: TypeClient::Professionnel,
+            statut: StatutClient::Client,
             email: String::new(),
             telephone: String::new(),
             adresse: String::new(),
@@ -790,6 +862,28 @@ impl Client {
             nom: nom.to_string(),
             type_client,
             ..Self::default()
+        }
+    }
+
+    /// Fiche de prospection : devis possibles, facturation différée.
+    pub fn prospect(nom: &str, type_client: TypeClient) -> Self {
+        Self {
+            statut: StatutClient::Prospect,
+            ..Self::nouveau(nom, type_client)
+        }
+    }
+
+    pub fn est_prospect(&self) -> bool {
+        self.statut.est_prospect()
+    }
+
+    /// Libellé complet : « prospect », « client », ou « anonymisé » après un
+    /// effacement RGPD.
+    pub fn qualite(&self) -> &'static str {
+        if !self.rgpd_efface_le.is_empty() {
+            "anonymisé"
+        } else {
+            self.statut.code()
         }
     }
     pub fn etiquette_presente(&self, etiquette: &str) -> bool {
@@ -1595,6 +1689,42 @@ mod tests {
         assert!(correspond("Atelier Dupont", "dupont atelier"));
         assert!(correspond("Atelier Dupont", ""));
         assert!(!correspond("Atelier Dupont", "martin"));
+    }
+
+    #[test]
+    fn prospect_et_client_sont_deux_etats() {
+        let prospect = Client::prospect("Piste SARL", TypeClient::Professionnel);
+        assert!(prospect.est_prospect());
+        assert_eq!(prospect.statut.code(), "prospect");
+        assert_eq!(prospect.qualite(), "prospect");
+        let client = Client::nouveau("Dupont", TypeClient::Professionnel);
+        assert!(!client.est_prospect());
+        assert_eq!(client.qualite(), "client");
+        // Un client anonymisé (RGPD) ne se présente plus comme un client.
+        let anonymise = Client {
+            rgpd_efface_le: "2026-11-02".into(),
+            ..client
+        };
+        assert_eq!(anonymise.qualite(), "anonymisé");
+        // Lecture tolérante des codes (imports, options en ligne de commande).
+        assert_eq!(StatutClient::depuis_code("prospect"), StatutClient::Prospect);
+        assert_eq!(StatutClient::depuis_code(" piste "), StatutClient::Prospect);
+        assert_eq!(StatutClient::depuis_code("client"), StatutClient::Client);
+        assert_eq!(StatutClient::depuis_code(""), StatutClient::Client);
+        assert_eq!(StatutClient::default(), StatutClient::Client);
+        // RGPD-02 : 3 ans pour un prospect, 10 ans pour un client.
+        assert_eq!(StatutClient::Prospect.conservation_annees(), 3);
+        assert_eq!(StatutClient::Client.conservation_annees(), 10);
+    }
+
+    #[test]
+    fn retirer_des_annees_reste_dans_le_calendrier() {
+        assert_eq!(retirer_annees("2026-11-02", 3), "2023-11-02");
+        // 29 février d'une année bissextile → 28 février.
+        assert_eq!(retirer_annees("2024-02-29", 3), "2021-02-28");
+        // Date invalide : rendue telle quelle plutôt que de mentir.
+        assert_eq!(retirer_annees("pas-une-date", 3), "pas-une-date");
+        assert_eq!(retirer_annees("2026-12-31", 0), "2026-12-31");
     }
 
     #[test]

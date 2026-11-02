@@ -69,6 +69,7 @@ model Client {
   societe_id BigInt
   nom String
   type_client String @default("professionnel")
+  statut_client String @default("client")
   email String @default("")
   telephone String @default("")
   adresse String @default("")

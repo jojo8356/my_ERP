@@ -172,9 +172,10 @@ fn json_document(d: &Document, regime: RegimeTva) -> String {
 
 fn json_client(c: &Client) -> String {
     format!(
-        "{{\"id\":{},\"nom\":\"{}\",\"type\":\"{}\",\"email\":\"{}\",\"ville\":\"{}\",\"etiquettes\":[{}]}}",
+        "{{\"id\":{},\"nom\":\"{}\",\"statut\":\"{}\",\"type\":\"{}\",\"email\":\"{}\",\"ville\":\"{}\",\"etiquettes\":[{}]}}",
         c.id,
         json_echapper(&c.nom),
+        c.statut.code(),
         c.type_client.code(),
         json_echapper(&c.email),
         json_echapper(&c.ville),
@@ -264,15 +265,18 @@ Format d'une ligne : \"désignation;quantité;prix unitaire HT[;taux TVA en poin
 
 fn aide_contexte(chemin: &[String]) -> &'static str {
     match chemin.first().map(|s| s.to_lowercase()).as_deref() {
-        Some("clients") => "\
-/clients                     liste (--tag, --json, --csv, --page)
-/clients nouveau --nom … --type pro|particulier|association
-/clients <recherche>         fiche + historique unifié
+        Some("clients") | Some("prospects") => "\
+/clients                     liste (--prospects, --clients, --perimes, --tag, --json, --csv, --page)
+/clients nouveau --nom … --type pro|particulier|association [--prospect]
+/clients <recherche>         fiche (statut, dernier contact, historique, encours)
 /clients <recherche> factures
-/clients <recherche> modifier --email … --ville … --siren …
+/clients <recherche> convertir        prospect → client (débloque la facturation)
+/clients <recherche> prospect         client → prospect
+/clients <recherche> modifier --email … --ville … --statut prospect|client
 /clients <recherche> tag <étiquette> | detag <étiquette>
 /clients <recherche> rgpd exporter | effacer
-/clients importer <fichier.csv> | exporter <fichier.csv>",
+/clients importer <fichier.csv> | exporter <fichier.csv>
+/prospects                   raccourci de /clients --prospects",
         Some("factures") => "\
 /factures                    liste (--impayees, --retard, --statut, --csv, --json)
 /factures nouvelle            --client … --ligne … [--sur-demande]   (facture due : CDC §11.2)
@@ -470,6 +474,12 @@ impl App {
                 self.cmd_recherche(&requete, options, sortie)?;
             }
             "clients" => self.cmd_clients(&contexte[1..], options, sortie)?,
+            "prospects" => {
+                // Raccourci de lecture : `/prospects` = `/clients --prospects`.
+                let mut options = options.clone();
+                options.insert("prospects".to_string(), vec!["oui".to_string()]);
+                self.cmd_clients(&[], &options, sortie)?
+            }
             "devis" => self.cmd_documents(TypeDocument::Devis, &contexte[1..], options, sortie)?,
             "factures" => {
                 self.cmd_documents(TypeDocument::Facture, &contexte[1..], options, sortie)?
@@ -658,6 +668,16 @@ impl App {
             None => self.lister_clients(options, sortie),
             Some("nouveau") | Some("nouvelle") => {
                 let client = self.creer_client_depuis_options(options)?;
+                if client.est_prospect() {
+                    return ecrire(
+                        sortie,
+                        theme::succes(format!(
+                            "✓ Prospect n°{} créé : {} — devis : /devis nouvelle --client {} · \
+                             conversion : /clients {} convertir",
+                            client.id, client.nom, client.nom, client.nom
+                        )),
+                    );
+                }
                 ecrire(
                     sortie,
                     theme::succes(format!(
@@ -702,10 +722,37 @@ impl App {
                             )),
                         )
                     }
+                    Some("convertir") | Some("convert") => {
+                        let client = self.store.convertir_client(client.id)?;
+                        self.store
+                            .journaliser("client.conversion", &client.nom)?;
+                        ecrire(
+                            sortie,
+                            theme::succes(format!(
+                                "✓ Prospect converti en client : {} (n°{}) — facturation ouverte",
+                                client.nom, client.id
+                            )),
+                        )
+                    }
+                    Some("prospect") => {
+                        let mut fiche = client.clone();
+                        fiche.statut = StatutClient::Prospect;
+                        fiche.modifie_le = aujourdhui();
+                        let fiche = self.store.modifier_client(fiche)?;
+                        self.store.journaliser("client.prospect", &fiche.nom)?;
+                        ecrire(
+                            sortie,
+                            theme::succes(format!(
+                                "✓ {} repasse en prospect (devis possibles, facture bloquée)",
+                                fiche.nom
+                            )),
+                        )
+                    }
                     Some("modifier") | Some("edit") => self.modifier_client(&client, options, sortie),
                     Some("rgpd") => self.rgpd_client(&client, rest.get(2).copied(), sortie),
                     Some(action) => Err(format!(
-                        "action « {action} » inconnue — essayez : factures | tag | detag | modifier | rgpd"
+                        "action « {action} » inconnue — essayez : factures | tag | detag | modifier | \
+                         convertir | prospect | rgpd"
                     )),
                 }
             }
@@ -717,6 +764,23 @@ impl App {
             Some(tag) => self.store.clients_par_etiquette(tag),
             None => self.store.clients(),
         };
+        // Filtres de statut : prospects, clients, ou les prospects à purger.
+        let mut perimes_seulement = false;
+        if drapeau(options, "prospects") || drapeau(options, "prospect") {
+            clients.retain(|c| c.est_prospect());
+        } else if drapeau(options, "clients") {
+            clients.retain(|c| !c.est_prospect());
+        }
+        if drapeau(options, "rgpd") || drapeau(options, "perimes") {
+            let perimes: Vec<i64> = self
+                .store
+                .prospects_perimes(&aujourdhui())
+                .into_iter()
+                .map(|(c, _)| c.id)
+                .collect();
+            clients.retain(|c| perimes.contains(&c.id));
+            perimes_seulement = true;
+        }
         clients.sort_by(|a, b| a.nom.cmp(&b.nom));
         if drapeau(options, "csv") {
             let lignes: Vec<Vec<String>> = clients
@@ -725,6 +789,7 @@ impl App {
                     vec![
                         c.id.to_string(),
                         c.nom.clone(),
+                        c.qualite().to_string(),
                         c.type_client.as_str().to_string(),
                         c.email.clone(),
                         c.telephone.clone(),
@@ -739,8 +804,8 @@ impl App {
                 sortie,
                 csv::exporter(
                     &[
-                        "id", "nom", "type", "email", "telephone", "adresse", "siren", "etiquettes",
-                        "rgpd_efface_le",
+                        "id", "nom", "statut", "type", "email", "telephone", "adresse", "siren",
+                        "etiquettes", "rgpd_efface_le",
                     ],
                     &lignes,
                 ),
@@ -751,22 +816,38 @@ impl App {
             return ecrire(sortie, format!("[{}]", items.join(",")));
         }
         if clients.is_empty() {
-            return ecrire(
-                sortie,
-                "Aucun client. Créez-en un : /clients nouveau --nom \"…\" --type pro (ou importez un CSV)",
-            );
+            let quoi = if perimes_seulement {
+                "Aucun prospect à purger : tous ont un contact de moins de 3 ans (RGPD-02)."
+            } else if drapeau(options, "prospects") {
+                "Aucun prospect. Créez-en un : /clients nouveau --nom \"…\" --prospect"
+            } else {
+                "Aucun client. Créez-en un : /clients nouveau --nom \"…\" --type pro \
+                 (ou importez un CSV)"
+            };
+            return ecrire(sortie, quoi);
         }
         let (page, pied) = paginer(&clients, options);
         for c in &page {
             ecrire(
                 sortie,
                 format!(
-                    "{:>4}  {:<32} {:<14} {:<28} {}",
+                    "{} {:>4}  {:<32} {:<11} {:<14} {:<28} {}",
+                    c.statut.symbole(),
                     c.id,
                     c.nom,
+                    c.qualite(),
                     c.type_client.as_str(),
                     c.email,
                     etiquettes_vers_texte(&c.etiquettes)
+                ),
+            )?;
+        }
+        if perimes_seulement {
+            ecrire(
+                sortie,
+                theme::alerte(
+                    "  RGPD-02 : prospects sans contact depuis plus de 3 ans — \
+                     /clients <nom> rgpd effacer",
                 ),
             )?;
         }
@@ -789,6 +870,23 @@ impl App {
             )),
         )?;
         let mut details: Vec<(&str, String)> = vec![
+            (
+                "statut",
+                format!(
+                    "{} {}{}",
+                    client.statut.symbole(),
+                    client.qualite(),
+                    if client.est_prospect() {
+                        " (devis possibles, facture bloquée)"
+                    } else {
+                        ""
+                    }
+                ),
+            ),
+            (
+                "dernier contact",
+                self.store.dernier_contact(client.id),
+            ),
             ("e-mail", client.email.clone()),
             ("téléphone", client.telephone.clone()),
             ("adresse", client.adresse_complete()),
@@ -897,6 +995,11 @@ impl App {
             nom,
             TypeClient::from_str(opt(options, "type").unwrap_or("pro"))?,
         );
+        // Prospect (piste commerciale) : `--prospect` ou `--statut prospect`.
+        let statut = opt(options, "statut").map(StatutClient::depuis_code);
+        if drapeau(options, "prospect") || statut == Some(StatutClient::Prospect) {
+            client.statut = StatutClient::Prospect;
+        }
         client.email = opt(options, "email").unwrap_or("").to_string();
         client.telephone = opt(options, "tel").unwrap_or("").to_string();
         client.adresse = opt(options, "adresse").unwrap_or("").to_string();
@@ -948,6 +1051,9 @@ impl App {
         if let Some(v) = opt(options, "type") {
             client.type_client = TypeClient::from_str(v)?;
         }
+        if let Some(v) = opt(options, "statut") {
+            client.statut = StatutClient::depuis_code(v);
+        }
         let client = self.store.modifier_client(client)?;
         ecrire(
             sortie,
@@ -987,6 +1093,9 @@ impl App {
                     Err(e) => erreurs.push(format!("ligne {} : {e}", index + 2)),
                 }
             }
+            // Colonne « statut » : les prospects d'un export externe restent
+            // des prospects (aucune conversion implicite).
+            client.statut = StatutClient::depuis_code(&table.valeur(ligne, &["statut", "etat"]));
             client.email = table.valeur(ligne, &["email", "mail", "courriel"]);
             client.telephone = table.valeur(ligne, &["telephone", "tel", "phone"]);
             client.adresse = table.valeur(ligne, &["adresse", "address", "rue"]);
@@ -1009,7 +1118,7 @@ impl App {
         ecrire(
             sortie,
             theme::succes(format!(
-                "✓ {importes} client(s) importé(s) depuis {fichier}{}",
+                "✓ {importes} fiche(s) importée(s) depuis {fichier}{}",
                 if erreurs.is_empty() {
                     String::new()
                 } else {
@@ -1225,6 +1334,15 @@ impl App {
     ) -> Resultat<()> {
         let recherche = opt(options, "client").ok_or("précisez --client <nom ou e-mail>")?;
         let client = self.trouver_client(recherche)?;
+        // Un prospect ne se facture pas : le devis est l'outil de prospection,
+        // la facture suppose une relation établie (CDC Module A).
+        if type_doc == TypeDocument::Facture && client.est_prospect() {
+            return Err(format!(
+                "{} est un prospect : établissez un devis, ou convertissez la fiche en client — \
+                 /clients {} convertir",
+                client.nom, client.nom
+            ));
+        }
         let mut lignes = Vec::new();
         for texte in options.get("ligne").cloned().unwrap_or_default() {
             lignes.push(parser_ligne(&texte)?);
@@ -3650,6 +3768,121 @@ mod tests {
         let texte = lancer(&mut app, "/utilisateurs code jojo");
         assert!(texte.contains("envoyé à j***@exemple.fr"), "{texte}");
         assert!(dossier.join("courriels").is_dir(), "message écrit dans la boîte");
+        let _ = std::fs::remove_dir_all(&dossier);
+    }
+
+    #[test]
+    fn prospects_crees_listes_et_convertis() {
+        let mut app = app();
+        lancer(&mut app, "/societe modifier --siren 123456789 --adresse \"1 rue\" --ville Nice");
+        // Création d'un prospect (option explicite) et d'un client (défaut).
+        let texte = lancer(
+            &mut app,
+            "/clients nouveau --nom \"Piste SARL\" --type pro --prospect --email piste@exemple.fr",
+        );
+        assert!(texte.contains("Prospect n°"), "{texte}");
+        assert!(texte.contains("convertir"), "{texte}");
+        let texte = lancer(&mut app, "/clients nouveau --nom \"Atelier Dupont\" --type pro");
+        assert!(texte.contains("Client n°"), "{texte}");
+        let texte = lancer(
+            &mut app,
+            "/clients nouveau --nom \"Zébulon\" --type particulier --statut prospect",
+        );
+        assert!(texte.contains("Prospect"), "{texte}");
+
+        // Listes filtrées et raccourci /prospects.
+        let tous = lancer(&mut app, "/clients");
+        assert!(tous.contains("Piste SARL") && tous.contains("Atelier Dupont"), "{tous}");
+        let prospects = lancer(&mut app, "/clients --prospects");
+        assert!(prospects.contains("Piste SARL"), "{prospects}");
+        assert!(!prospects.contains("Atelier Dupont"), "{prospects}");
+        let raccourci = lancer(&mut app, "/prospects");
+        assert!(raccourci.contains("Zébulon"), "{raccourci}");
+        assert!(!raccourci.contains("Atelier Dupont"), "{raccourci}");
+        let clients = lancer(&mut app, "/clients --clients");
+        assert!(clients.contains("Atelier Dupont"), "{clients}");
+        assert!(!clients.contains("Piste SARL"), "{clients}");
+        // CSV et JSON portent le statut.
+        let csv = lancer(&mut app, "/clients --csv");
+        assert!(csv.starts_with("id;nom;statut;type"), "{csv}");
+        assert!(csv.contains(";prospect;"), "{csv}");
+        let json = lancer(&mut app, "/clients --json");
+        assert!(json.contains("\"statut\":\"prospect\""), "{json}");
+
+        // Fiche : statut et dernier contact visibles.
+        let fiche = lancer(&mut app, "/clients piste");
+        assert!(fiche.contains("statut"), "{fiche}");
+        assert!(fiche.contains("prospect"), "{fiche}");
+        assert!(fiche.contains("dernier contact"), "{fiche}");
+
+        // Devis possible, facture refusée tant que la fiche est un prospect.
+        let texte = lancer(
+            &mut app,
+            "/devis nouvelle --client piste --ligne \"Étude;1;500,00\"",
+        );
+        assert!(texte.contains("Devis"), "{texte}");
+        let numero = app
+            .store
+            .documents(Some(TypeDocument::Devis))[0]
+            .numero
+            .clone();
+        assert!(!lancer(&mut app, &format!("/devis {numero} envoyer")).contains("ERREUR"));
+        assert!(!lancer(&mut app, &format!("/devis {numero} accepter")).contains("ERREUR"));
+        let texte = lancer(&mut app, &format!("/devis {numero} transformer"));
+        assert!(texte.contains("ERREUR"), "un prospect ne se facture pas : {texte}");
+        assert!(texte.contains("convertir"), "{texte}");
+        let texte = lancer(
+            &mut app,
+            "/factures nouvelle --client piste --ligne \"Étude;1;100,00\"",
+        );
+        assert!(texte.contains("ERREUR"), "{texte}");
+        assert!(texte.contains("prospect"), "{texte}");
+        assert!(texte.contains("convertir"), "{texte}");
+
+        // Conversion : la facturation s'ouvre.
+        let texte = lancer(&mut app, "/clients piste convertir");
+        assert!(texte.contains("converti en client"), "{texte}");
+        let texte = lancer(
+            &mut app,
+            "/factures nouvelle --client piste --ligne \"Étude;1;100,00\"",
+        );
+        assert!(texte.contains("Facture"), "{texte}");
+        let texte = lancer(&mut app, &format!("/devis {numero} transformer"));
+        assert!(!texte.contains("ERREUR"), "{texte}");
+        assert!(texte.contains("transformed") || texte.contains("transformé"), "{texte}");
+        // Conversion rejouée : message clair, pas d'erreur silencieuse.
+        let texte = lancer(&mut app, "/clients piste convertir");
+        assert!(texte.contains("déjà un client"), "{texte}");
+        // Retour en prospect, puis via --statut sur modifier.
+        let texte = lancer(&mut app, "/clients piste prospect");
+        assert!(texte.contains("repasse en prospect"), "{texte}");
+        let texte = lancer(&mut app, "/clients piste modifier --statut client");
+        assert!(texte.contains("mis à jour"), "{texte}");
+        // Audit : la conversion est tracée.
+        let audit = lancer(&mut app, "/admin audit");
+        assert!(audit.contains("client.conversion"), "{audit}");
+    }
+
+    #[test]
+    fn import_csv_avec_statut_prospect() {
+        let dossier = std::env::temp_dir().join(format!("erp-import-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dossier);
+        std::fs::create_dir_all(&dossier).unwrap();
+        let fichier = dossier.join("fiches.csv");
+        std::fs::write(
+            &fichier,
+            "nom;statut;type;email\nPiste A;prospect;pro;pa@exemple.fr\nClient B;client;particulier;cb@exemple.fr\n",
+        )
+        .unwrap();
+        let mut app = app();
+        let texte = lancer(
+            &mut app,
+            &format!("/clients importer {}", fichier.display()),
+        );
+        assert!(texte.contains("2 fiche(s) importée(s)"), "{texte}");
+        let prospects = lancer(&mut app, "/prospects");
+        assert!(prospects.contains("Piste A"), "{prospects}");
+        assert!(!prospects.contains("Client B"), "{prospects}");
         let _ = std::fs::remove_dir_all(&dossier);
     }
 
