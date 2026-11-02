@@ -8,7 +8,10 @@ set -euo pipefail
 # en annotation : le journal complet n'est lisible que sur GitHub).
 trap 'echo "✗ échec du scénario à la ligne ${LINENO} : ${BASH_COMMAND}" >&2' ERR
 
-ERP="cargo run --quiet --"
+# `ERP_BIN` permet de rejouer la recette avec un binaire déjà compilé (mêmes
+# options, notamment `--features postgres`) : sans lui, `cargo run` recompile et
+# écraserait le binaire utilisé par l'appelant (cf. test-all.sh).
+ERP="${ERP_BIN:-cargo run --quiet --}"
 export ERP_DONNEES_DIR="${ERP_DONNEES_DIR:-donnees}"
 DONNEES="$ERP_DONNEES_DIR"
 mkdir -p "$DONNEES/exports"

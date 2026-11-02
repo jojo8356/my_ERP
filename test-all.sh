@@ -330,7 +330,10 @@ etape_recette() {
   mkdir -p "$ERP_DONNEES_DIR/exports"
 
   echo "  → scénario complet (scripts/scenario-demo.sh)" >&2
-  if ! ERP_DONNEES_DIR="$ERP_DONNEES_DIR" bash scripts/scenario-demo.sh >"$LOGS/recette.log" 2>&1; then
+  # On impose le binaire déjà compilé (avec les features demandées) : `cargo run`
+  # en recompilerait un autre, sans les features, et écraserait celui-ci.
+  if ! ERP_BIN="$BIN" ERP_DONNEES_DIR="$ERP_DONNEES_DIR" \
+       bash scripts/scenario-demo.sh >"$LOGS/recette.log" 2>&1; then
     tail -n 40 "$LOGS/recette.log" >&2
     return 1
   fi
