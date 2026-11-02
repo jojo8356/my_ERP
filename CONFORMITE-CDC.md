@@ -17,7 +17,7 @@ dans deux jobs : sans base, et avec un service PostgreSQL 16
 
 | Exigence | Statut | Où | Vérifié par |
 |---|---|---|---|
-| EF-SOC-01 Multi-sociétés, données cloisonnées, devise par société | ✔ | `store.rs` (`basculer_societe`, filtres `societe_id`), `cli.rs` (`/societes`, `/societes/<nom>`, `--societe`) | `store::tests::multi_societes_cloisonnees`, `cli::tests::bascule_de_societe_par_le_chemin`, scénario §14 |
+| EF-SOC-01 Multi-sociétés, données cloisonnées, devise par société | ✔ | `store.rs` (`basculer_societe`, filtres `societe_id`), `cli.rs` (`/societes`, `/societes/<nom>`, `--societe`). TUI : touche `e` = **sélecteur de sociétés** (`▸` sur la courante, `↑↓` puis `Entrée`), en-tête rappelant société · régime · devise · session, société courante persistée dans `meta.tsv` | `store::tests::multi_societes_cloisonnees`, `cli::tests::bascule_de_societe_par_le_chemin`, `tui::tests::le_selecteur_de_societes_bascule_au_clavier`, `tui::tests::un_selecteur_sans_choix_le_dit_au_lieu_de_planter`, scénario §14 et §19 |
 | EF-SOC-02 Multi-devises, taux datés, totaux en devise de référence | ✔ | `domain.rs` (`convertir`, `parse_taux`, `Document::totaux_reference`), `store.rs` (`enregistrer_taux`, `taux`), `/devises` | `domain::tests::conversions_devises`, `store::tests::devises_et_conversion`, scénario §13 |
 | EF-SOC-03 Recherche globale | ✔ | `store::recherche_globale`, `/recherche`, TUI (`s`) | `cli::tests::recherche_et_listes_json`, scénario §11 |
 
@@ -95,7 +95,7 @@ dans deux jobs : sans base, et avec un service PostgreSQL 16
 
 | Exigence | Statut | Où | Vérifié par |
 |---|---|---|---|
-| SEC-01 Comptes nominatifs | ✔ | table `utilisateurs`, `/utilisateurs`, `/auth` | `store::tests::utilisateurs_et_roles` |
+| SEC-01 Comptes nominatifs | ✔ | table `utilisateurs`, `/utilisateurs`, `/auth`. TUI : touche `u` = sélecteur de sessions (une ligne par compte, « Session locale » pour se déconnecter), qui ouvre la connexion du compte — mot de passe saisi **masqué** (`Champ::secret`, jamais affiché ni journalisé), code 2FA facultatif ; session courante persistée dans `meta.tsv` et rappelée dans l'en-tête | `store::tests::utilisateurs_et_roles`, `tui::tests::le_selecteur_de_sessions_ouvre_une_connexion_masquee`, scénario §19 |
 | SEC-02 Double authentification (admin) | ✔ | `securite::totp`/`verifier_totp`, `/utilisateurs 2fa`, connexion `--totp` **ou** `--code` (code e-mail, SEC-03) | `securite::tests` (RFC 6238), `cli::tests::code_de_connexion_par_email_puis_connexion`, scénario §12 |
 | SEC-03 Mots de passe hachés | ✔ | PBKDF2-HMAC-SHA256 120 000 itérations + sel, `egalite_constante` | `securite::tests::hachage_de_mot_de_passe_aller_retour` |
 | SEC-03 Code de connexion envoyé par e-mail | ✔ | `messagerie::courriel_code_connexion` (message sans pièce jointe), `store::ouvrir_code_connexion`/`verifier_code_connexion` (empreinte seule, 15 min, usage unique, 5 tentatives), `/utilisateurs code <compte>` puis `/auth connexion … --code …` | `store::tests::code_de_connexion_*` (3), `messagerie::tests::courriel_de_code_de_connexion`, `cli::tests::code_de_connexion_*` (2), `bdd::integration::le_code_de_connexion_est_persiste_dans_la_base` |

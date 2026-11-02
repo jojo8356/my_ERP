@@ -105,6 +105,32 @@ fiche n'est pas convertie (message qui donne la commande exacte). Filtres :
 plus de 3 ans, à anonymiser ou convertir). Le statut apparaît dans la liste, la
 fiche, le CSV et le JSON, et le formulaire de la TUI propose « client » par défaut.
 
+### Plusieurs sociétés, plusieurs sessions — un sélecteur dans la TUI
+
+Les données sont **cloisonnées par société** (clients, documents, compta…) et la
+société courante comme la session sont enregistrées dans `meta.tsv` : on
+retrouve son contexte au redémarrage, sans variable d'environnement.
+
+```
+TUI   e   sélecteur de sociétés   ▸ = société courante, ↑↓ pour choisir, Entrée bascule
+TUI   u   sélecteur de sessions   les comptes + « Session locale » (déconnexion)
+CLI       /societes basculer <nom>   ·   /societes/<nom>   ·   --societe <nom>
+CLI       /auth connexion <compte> --mot-de-passe … [--totp 123456]
+```
+
+Le mode interactif rappelle le contexte dans son invite — impossible de se
+tromper d'entreprise sans le voir :
+
+```
+erp [Atelier Dupont · jojo] › /factures
+```
+
+Le sélecteur de session ouvre la **connexion du compte choisi** : le mot de passe
+est saisi **masqué** (`••••`, jamais affiché, jamais journalisé) et le code 2FA
+reste facultatif — les règles d'authentification sont celles du CLI, la TUI ne
+les réimplémente pas. L'en-tête rappelle en permanence société, régime, devise et
+session, pour ne jamais saisir une facture dans la mauvaise entreprise.
+
 ### Deux règles de conformité appliquées, pas seulement documentées
 
 - **Facture obligatoire ou non (CDC §11.2)** — `TypeClient::facture_obligatoire` :

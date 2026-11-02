@@ -386,6 +386,27 @@ etape_recette() {
     printf '  %s✗%s pagination des longues listes\n' "$ROUGE" "$NEUTRE" >&2; echecs=$((echecs+1))
   fi
 
+  # Sélecteurs de la TUI : la société courante est marquée, la session est lisible.
+  # (Les touches e/u sont testées unitairement : ici on valide ce qu'elles pilotent.)
+  if "$BIN" /societes 2>/dev/null | grep -q '▸'; then
+    printf '  %s✓%s société courante marquée dans /societes\n' "$VERT" "$NEUTRE" >&2
+  else
+    printf '  %s✗%s repère de société courante absent de /societes\n' "$ROUGE" "$NEUTRE" >&2
+    echecs=$((echecs + 1))
+  fi
+  if "$BIN" /auth statut 2>/dev/null | grep -q 'Session :'; then
+    printf '  %s✓%s session courante lisible (/auth statut)\n' "$VERT" "$NEUTRE" >&2
+  else
+    printf '  %s✗%s état de session illisible\n' "$ROUGE" "$NEUTRE" >&2
+    echecs=$((echecs + 1))
+  fi
+  if "$BIN" --societe "Atelier Dupont" /clients >/dev/null 2>&1; then
+    printf '  %s✓%s option globale --societe (contexte d’une commande)\n' "$VERT" "$NEUTRE" >&2
+  else
+    printf '  %s✗%s option globale --societe\n' "$ROUGE" "$NEUTRE" >&2
+    echecs=$((echecs + 1))
+  fi
+
   # Aide contextuelle et messages actionnables en français.
   if "$BIN" /factures 2>/dev/null | grep -q 'FA-' && "$BIN" /aide factures 2>/dev/null | grep -q '/factures'; then
     printf '  %s✓%s aide contextuelle\n' "$VERT" "$NEUTRE" >&2

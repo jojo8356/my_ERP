@@ -313,6 +313,7 @@ fn aide_contexte(chemin: &[String]) -> &'static str {
 /societes nouvelle --nom \"…\" --siren … --regime franchise|reel
 /societes basculer <nom>     change de société courante
 /societes/<nom>              raccourci de bascule (chemin)
+TUI : touche e               sélecteur de sociétés (Entrée bascule)
 /societes regime franchise|reel   régime de TVA de la société courante
 /societe modifier --siren … --adresse … --ville … --delai 30
 /societe regime franchise | reel",
@@ -328,7 +329,8 @@ fn aide_contexte(chemin: &[String]) -> &'static str {
 /utilisateurs 2fa <compte>   active la double authentification (secret + codes)
 /utilisateurs code <compte>  envoie un code de connexion à usage unique par e-mail
 /utilisateurs email <compte> --email …   adresse de réception du code
-/utilisateurs mot-de-passe <compte> --nouveau …",
+/utilisateurs mot-de-passe <compte> --nouveau …
+TUI : touche u               sélecteur de sessions (mot de passe masqué)",
         Some("admin") => "\
 /admin sante                 fichiers, lignes, sauvegarde, chaîne d'audit
 /admin schema                modèle Rustorm (--sql pour la migration PostgreSQL)
@@ -3542,10 +3544,15 @@ pub fn repl(app: &mut App, stdin: &mut dyn BufRead, sortie: &mut dyn Write) -> R
     ecrire(sortie, texte)?;
     let mut chemin: Vec<String> = Vec::new();
     loop {
+        // L'invite rappelle le contexte : sans ça, on saisit une facture dans la
+        // mauvaise société ou sous le mauvais compte sans s'en apercevoir.
+        let societe = app.store.societe().map(|s| s.nom).unwrap_or_default();
+        let session = app.store.session();
+        let contexte = format!("{societe} · {session}");
         let invite = if chemin.is_empty() {
-            "erp › ".to_string()
+            format!("erp [{contexte}] › ")
         } else {
-            format!("erp /{} › ", chemin.join("/"))
+            format!("erp [{contexte}] /{} › ", chemin.join("/"))
         };
         write!(sortie, "{}", theme::selection(invite)).map_err(|e| e.to_string())?;
         sortie.flush().map_err(|e| e.to_string())?;
@@ -4051,6 +4058,41 @@ mod tests {
         let avant = metier(&app);
         lancer(&mut app, "/clients piste statut prospect");
         assert_eq!(metier(&app), avant, "statut inchangé = pas de conversion");
+    }
+
+    #[test]
+    fn l_invite_du_repl_rappelle_societe_et_session() {
+        let mut app = app();
+        lancer(&mut app, "/societes nouvelle --nom \"Atelier Bis\"");
+        lancer(
+            &mut app,
+            "/utilisateurs nouveau jojo --mot-de-passe \"MotDePasse123!\"",
+        );
+        lancer(
+            &mut app,
+            "/auth connexion jojo --mot-de-passe \"MotDePasse123!\"",
+        );
+        let mut entree = std::io::Cursor::new(b"?\nq\n".to_vec());
+        let mut sortie: Vec<u8> = Vec::new();
+        repl(&mut app, &mut entree, &mut sortie).unwrap();
+        // L'invite est colorée : on retire les séquences ANSI avant de comparer.
+        let mut propre = String::new();
+        let mut sequence = false;
+        for c in String::from_utf8_lossy(&sortie).chars() {
+            if c == '\u{1b}' {
+                sequence = true;
+            } else if sequence {
+                if c == 'm' {
+                    sequence = false;
+                }
+            } else {
+                propre.push(c);
+            }
+        }
+        assert!(
+            propre.contains("erp [Atelier Bis · jojo] ›"),
+            "l'invite doit rappeler société et session : {propre}"
+        );
     }
 
     #[test]

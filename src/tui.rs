@@ -8,7 +8,8 @@
 //! garantit que la TUI et le CLI ne peuvent pas diverger (CDC §6, ENF-ERG-02).
 //!
 //! Raccourcis affichés en permanence en pied d'écran (CDC §6.2) :
-//! `←→` onglets · `↑↓` défilement · `n` nouveau · `p` paiement · `s` recherche
+//! `←→` onglets · `↑↓` défilement · `n` nouveau · `c` statut prospect↔client
+//! · `o` note · `p` paiement · `s` recherche · `e` société · `u` session
 //! · `r` rafraîchir · `?` aide · `q` quitter. Aucune action destructive n'est
 //! accessible sans passer par la commande explicite (le CLI demande la
 //! référence), donc aucune ne peut être déclenchée par une touche seule.
@@ -44,8 +45,8 @@ pub const ONGLETS: [(&str, &str); 8] = [
 ];
 
 /// Ligne de raccourcis affichée en permanence (CDC §6.2).
-pub const RACCOURCIS: &str = "←→ onglets · ↑↓ défiler · n nouveau · c statut prospect↔client \
-· o note · p paiement · s recherche · r rafraîchir · ? aide · q quitter";
+pub const RACCOURCIS: &str = "←→ onglets · ↑↓ défiler · n nouveau · c statut · o note \
+· p paiement · s recherche · e société · u session · r rafraîchir · ? aide · q quitter";
 
 // ------------------------------------------------------------------ Formulaire
 
@@ -60,6 +61,9 @@ pub struct Champ {
     /// Bascule graphique (interrupteur) : les deux positions possibles, dans
     /// l'ordre (« éteinte », « allumée »). `None` = champ texte.
     pub bascule: Option<(&'static str, &'static str)>,
+    /// Saisie masquée (mot de passe, code) : la valeur réelle n'est **jamais**
+    /// affichée à l'écran, seulement des points.
+    pub secret: bool,
 }
 
 impl Champ {
@@ -76,6 +80,29 @@ impl Champ {
             obligatoire,
             indice,
             bascule: None,
+            secret: false,
+        }
+    }
+
+    /// Champ masqué : la frappe n'apparaît qu'en points (mot de passe, code).
+    pub fn secret(
+        cle: &'static str,
+        libelle: &'static str,
+        obligatoire: bool,
+        indice: &'static str,
+    ) -> Self {
+        Self {
+            secret: true,
+            ..Self::new(cle, libelle, obligatoire, indice)
+        }
+    }
+
+    /// Ce que l'écran a le droit de montrer de la valeur.
+    pub fn affichee(&self) -> String {
+        if self.secret {
+            "•".repeat(self.valeur.chars().count())
+        } else {
+            self.valeur.clone()
         }
     }
 
@@ -202,6 +229,30 @@ impl Formulaire {
                     "Statut (Espace pour basculer)",
                     ("client", "prospect"),
                     "client = facturation ouverte · prospect = devis seulement",
+                ),
+            ],
+        )
+    }
+
+    /// Connexion à un compte (sélecteur de session, touche `u`) : le mot de
+    /// passe est **masqué**, le code 2FA facultatif (SEC-02 / SEC-03).
+    pub fn connexion() -> Self {
+        Self::nouveau(
+            "Session : connexion",
+            "/auth connexion \"{compte}\" --mot-de-passe \"{mot_de_passe}\" --totp \"{totp}\"",
+            vec![
+                Champ::new("compte", "Compte", true, "nom d'utilisateur"),
+                Champ::secret(
+                    "mot_de_passe",
+                    "Mot de passe (masqué)",
+                    true,
+                    "12 caractères minimum — jamais affiché",
+                ),
+                Champ::new(
+                    "totp",
+                    "Code 2FA",
+                    false,
+                    "facultatif : 6 chiffres ou code reçu par e-mail",
                 ),
             ],
         )
@@ -381,6 +432,118 @@ impl Formulaire {
     }
 }
 
+// ------------------------------------------------------------------ Sélecteur
+
+/// Une ligne du sélecteur : une société, un compte…
+#[derive(Debug, Clone)]
+pub struct OptionSelecteur {
+    pub libelle: String,
+    pub detail: String,
+    /// Ligne de l'élément courant (marquée `▸`).
+    pub courant: bool,
+    /// Commande exécutée immédiatement quand on valide (bascule directe).
+    pub commande: Option<String>,
+    /// Compte à connecter : valider ouvre le formulaire de mot de passe.
+    pub compte: Option<String>,
+}
+
+/// Sélecteur plein écran : une liste où l'on se déplace et où **Entrée** agit.
+///
+/// Deux usages, les deux questions du quotidien : « sur quelle société je
+/// travaille ? » (`e`) et « sous quelle session ? » (`u`). L'élément courant
+/// est marqué `▸`, la ligne choisie `❯` — le reste n'est qu'une commande du
+/// CLI, donc aucun comportement propre à la TUI.
+#[derive(Debug, Clone)]
+pub struct Selecteur {
+    pub titre: &'static str,
+    pub invite: &'static str,
+    pub options: Vec<OptionSelecteur>,
+    pub index: usize,
+}
+
+impl Selecteur {
+    /// Sélecteur des sociétés : une ligne par société, la courante marquée.
+    pub fn societes(app: &mut App) -> Self {
+        let courante = app.store.societe().map(|s| s.id).unwrap_or(0);
+        let options: Vec<OptionSelecteur> = app
+            .store
+            .societes()
+            .into_iter()
+            .map(|s| OptionSelecteur {
+                libelle: s.nom.clone(),
+                detail: format!("{} · devise {}", s.regime.libelle(), s.devise),
+                courant: s.id == courante,
+                commande: Some(format!("/societes basculer \"{}\"", s.nom)),
+                compte: None,
+            })
+            .collect();
+        let index = options.iter().position(|o| o.courant).unwrap_or(0);
+        Self {
+            titre: "Sociétés — sélecteur",
+            invite: "↑↓ choisir · Entrée basculer · Échap annuler",
+            options,
+            index,
+        }
+    }
+
+    /// Sélecteur des sessions : les comptes déclarés + « session locale ».
+    pub fn sessions(app: &mut App) -> Self {
+        let session = app.store.session();
+        let mut options: Vec<OptionSelecteur> = Vec::new();
+        if session != "local" {
+            options.push(OptionSelecteur {
+                libelle: "Session locale".to_string(),
+                detail: format!("déconnecter {session}"),
+                courant: false,
+                commande: Some("/auth deconnexion".to_string()),
+                compte: None,
+            });
+        }
+        for utilisateur in app.store.utilisateurs() {
+            let actif = utilisateur.actif;
+            options.push(OptionSelecteur {
+                libelle: utilisateur.nom_utilisateur.clone(),
+                detail: format!(
+                    "{} · {}{}",
+                    utilisateur.role.libelle(),
+                    if utilisateur.deux_facteurs_actif() {
+                        "2FA activée"
+                    } else {
+                        "sans 2FA"
+                    },
+                    if actif { "" } else { " · désactivé" }
+                ),
+                courant: utilisateur.nom_utilisateur == session,
+                commande: None,
+                compte: if actif {
+                    Some(utilisateur.nom_utilisateur)
+                } else {
+                    None
+                },
+            });
+        }
+        Self {
+            titre: "Sessions — sélecteur",
+            invite: "↑↓ choisir · Entrée se connecter · Échap annuler",
+            options,
+            index: 0,
+        }
+    }
+
+    /// Déplace la ligne choisie (avec rebouclage : on ne se perd jamais).
+    pub fn deplacer(&mut self, pas: i32) {
+        if self.options.is_empty() {
+            return;
+        }
+        let n = self.options.len() as i32;
+        self.index = ((self.index as i32 + pas).rem_euclid(n)) as usize;
+    }
+
+    pub fn courante(&self) -> Option<&OptionSelecteur> {
+        self.options.get(self.index)
+    }
+}
+
 // ---------------------------------------------------------------------- Vue
 
 /// État de l'écran : onglet, défilement, contenu déjà chargé.
@@ -393,6 +556,7 @@ pub struct Vue {
     pub message: String,
     pub succes: bool,
     pub formulaire: Option<Formulaire>,
+    pub selecteur: Option<Selecteur>,
     pub aide: bool,
     pub recherhe: Option<String>,
     pub quitter: bool,
@@ -408,6 +572,7 @@ impl Default for Vue {
             message: "Prêt · toutes les données restent locales".to_string(),
             succes: false,
             formulaire: None,
+            selecteur: None,
             aide: false,
             recherhe: None,
             quitter: false,
@@ -475,9 +640,83 @@ impl Vue {
         }
     }
 
+    /// Exécute une commande du CLI et garde la **première** ligne de la réponse
+    /// comme message d'écran (c'est ce que le pied de page affiche).
+    fn executer_et_recharger(&mut self, app: &mut App, commande: &str) -> bool {
+        let mut tampon: Vec<u8> = Vec::new();
+        match app.executer(commande, &mut tampon) {
+            Ok(_) => {
+                self.message = sans_ansi(&String::from_utf8_lossy(&tampon))
+                    .lines()
+                    .next()
+                    .unwrap_or("fait")
+                    .to_string();
+                self.succes = true;
+                self.recherhe = None;
+                true
+            }
+            Err(e) => {
+                self.message = e;
+                self.succes = false;
+                false
+            }
+        }
+    }
+
     /// Applique une touche. Renvoie `true` si un rafraîchissement est utile.
+    ///
+    /// Trois couches, dans cet ordre : le **sélecteur** (société / session), le
+    /// **formulaire** de saisie, puis la navigation. Un sélecteur ouvert capte
+    /// tout : on ne peut pas changer d'onglet au milieu d'un choix.
     pub fn touche(&mut self, app: &mut App, touche: KeyEvent) -> bool {
         if touche.kind != KeyEventKind::Press {
+            return false;
+        }
+        // 0. Sélecteur (société, session) : il capte tout tant qu'il est ouvert.
+        if let Some(mut sel) = self.selecteur.take() {
+            match touche.code {
+                KeyCode::Esc => {
+                    self.message = "Sélection annulée".to_string();
+                    self.succes = false;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    sel.deplacer(-1);
+                    self.selecteur = Some(sel);
+                }
+                KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
+                    sel.deplacer(1);
+                    self.selecteur = Some(sel);
+                }
+                KeyCode::Home => {
+                    sel.index = 0;
+                    self.selecteur = Some(sel);
+                }
+                KeyCode::End => {
+                    sel.index = sel.options.len().saturating_sub(1);
+                    self.selecteur = Some(sel);
+                }
+                KeyCode::Enter => match sel.courante().cloned() {
+                    None => {
+                        self.message = "Aucun choix disponible — créez-le d'abord".to_string();
+                        self.succes = false;
+                    }
+                    Some(option) => match (option.commande, option.compte) {
+                        (Some(commande), _) => return self.executer_et_recharger(app, &commande),
+                        // Un compte : on demande le mot de passe (masqué).
+                        (None, Some(compte)) => {
+                            let mut form = Formulaire::connexion();
+                            form.champs[0].valeur = compte;
+                            form.focus = 1;
+                            self.formulaire = Some(form);
+                        }
+                        (None, None) => {
+                            self.message = format!("{} est désactivé", option.libelle);
+                            self.succes = false;
+                        }
+                    },
+                },
+                _ => self.selecteur = Some(sel),
+            }
             return false;
         }
         // 1. Saisie dans un formulaire.
@@ -505,25 +744,13 @@ impl Vue {
                         self.formulaire = Some(form);
                     }
                     Ok(commande) => {
-                        let mut tampon: Vec<u8> = Vec::new();
-                        match app.executer(&commande, &mut tampon) {
-                            Ok(_) => {
-                                self.message = sans_ansi(&String::from_utf8_lossy(&tampon))
-                                    .lines()
-                                    .next()
-                                    .unwrap_or("fait")
-                                    .to_string();
-                                self.succes = true;
-                                self.recherhe = None;
-                                return true;
-                            }
-                            Err(e) => {
-                                self.message = e.clone();
-                                form.erreur = Some(e);
-                                self.formulaire = Some(form);
-                                self.succes = false;
-                            }
+                        if self.executer_et_recharger(app, &commande) {
+                            return true;
                         }
+                        // Échec : on rend la main au formulaire avec le message
+                        // exact du CLI (aucune règle métier n'est recopiée ici).
+                        form.erreur = Some(self.message.clone());
+                        self.formulaire = Some(form);
                     }
                 },
                 KeyCode::Char(c) => {
@@ -574,6 +801,14 @@ impl Vue {
             KeyCode::Char('r') | KeyCode::F(5) => return true,
             KeyCode::Char('n') => {
                 self.formulaire = Some(self.formulaire_onglet());
+            }
+            // `e` : sélecteur de société (multi-sociétés, EF-SOC-01).
+            KeyCode::Char('e') => {
+                self.selecteur = Some(Selecteur::societes(app));
+            }
+            // `u` : sélecteur de session (les comptes, SEC-01).
+            KeyCode::Char('u') => {
+                self.selecteur = Some(Selecteur::sessions(app));
             }
             // `c` : interrupteur prospect ↔ client (CDC Module A).
             KeyCode::Char('c') => {
@@ -674,7 +909,14 @@ fn style_message(vue: &Vue) -> Style {
 
 // ------------------------------------------------------------------ Rendu
 
-fn dessiner(frame: &mut Frame, vue: &Vue, societe: &str, regime: &str, devise: &str) {
+fn dessiner(
+    frame: &mut Frame,
+    vue: &Vue,
+    societe: &str,
+    regime: &str,
+    devise: &str,
+    session: &str,
+) {
     let zones = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -690,7 +932,7 @@ fn dessiner(frame: &mut Frame, vue: &Vue, societe: &str, regime: &str, devise: &
         Span::styled(" ERP ", style_onglet_actif()),
         Span::styled(format!(" {societe} "), style_titre()),
         Span::styled(
-            format!("· {regime} · {devise} · {} ", vue.chemin().trim()),
+            format!("· {regime} · {devise} · session {session} · {} ", vue.chemin().trim()),
             style_violet(),
         ),
     ]);
@@ -738,9 +980,61 @@ fn dessiner(frame: &mut Frame, vue: &Vue, societe: &str, regime: &str, devise: &
     if vue.aide {
         dessiner_aide(frame, vue);
     }
+    if let Some(selecteur) = &vue.selecteur {
+        dessiner_selecteur(frame, selecteur);
+    }
     if let Some(form) = &vue.formulaire {
         dessiner_formulaire(frame, form);
     }
+}
+
+/// Rend le sélecteur : `▸` = élément courant, `❯` = ligne choisie.
+fn dessiner_selecteur(frame: &mut Frame, sel: &Selecteur) {
+    let hauteur = (sel.options.len() as u16 + 6).min(frame.area().height);
+    let zone = centre_hauteur(frame.area(), 72, hauteur);
+    frame.render_widget(Clear, zone);
+
+    let mut lignes: Vec<TxtLine> = Vec::new();
+    if sel.options.is_empty() {
+        lignes.push(TxtLine::from(Span::styled(
+            "  (aucun élément — créez-le avec une commande du CLI)",
+            Style::default().fg(rgb(theme::ORANGE_RGB)),
+        )));
+    }
+    for (index, option) in sel.options.iter().enumerate() {
+        let choisi = index == sel.index;
+        let style = if choisi {
+            style_onglet_actif()
+        } else {
+            Style::default().fg(rgb(theme::BLANC_RGB))
+        };
+        lignes.push(TxtLine::from(Span::styled(
+            format!(
+                " {} {} {:<26} {}",
+                if option.courant { "▸" } else { " " },
+                if choisi { "❯" } else { " " },
+                option.libelle,
+                option.detail
+            ),
+            style,
+        )));
+    }
+    lignes.push(TxtLine::from(""));
+    lignes.push(TxtLine::from(Span::styled(
+        sel.invite,
+        style_onglet_inactif(),
+    )));
+
+    let bloc = Block::default()
+        .borders(Borders::ALL)
+        .border_style(style_violet())
+        .title(Span::styled(format!(" {} ", sel.titre), style_titre()));
+    frame.render_widget(
+        Paragraph::new(lignes)
+            .block(bloc)
+            .wrap(Wrap { trim: false }),
+        zone,
+    );
 }
 
 fn dessiner_aide(frame: &mut Frame, vue: &Vue) {
@@ -763,6 +1057,12 @@ fn dessiner_aide(frame: &mut Frame, vue: &Vue) {
     ));
     lignes.push(TxtLine::from(
         "Notes : touche o — une note datée est conservée avec la fiche (journal).",
+    ));
+    lignes.push(TxtLine::from(
+        "Société : touche e — sélecteur, Entrée bascule (données séparées par société).",
+    ));
+    lignes.push(TxtLine::from(
+        "Session : touche u — sélecteur des comptes, mot de passe masqué (12 caractères min.).",
     ));
     lignes.push(TxtLine::from(""));
     lignes.push(TxtLine::from(
@@ -802,7 +1102,7 @@ fn dessiner_formulaire(frame: &mut Frame, form: &Formulaire) {
         match champ.affichage_bascule() {
             Some(rendu) => lignes.push(TxtLine::from(Span::styled(format!("  {rendu}"), style))),
             None => lignes.push(TxtLine::from(Span::styled(
-                format!("  {}▏", champ.valeur),
+                format!("  {}▏", champ.affichee()),
                 style,
             ))),
         }
@@ -891,8 +1191,9 @@ fn boucle(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> R
             regime = societe.regime.libelle().to_string();
             devise = societe.devise.clone();
         }
+        let session = app.store.session();
         terminal
-            .draw(|frame| dessiner(frame, &vue, &nom, &regime, &devise))
+            .draw(|frame| dessiner(frame, &vue, &nom, &regime, &devise, &session))
             .map_err(|e| format!("affichage : {e}"))?;
         if vue.quitter {
             return Ok(());
@@ -1040,6 +1341,87 @@ mod tests {
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].texte, "Rappeler lundi");
         assert!(vue.message.contains("Note"), "{}", vue.message);
+    }
+
+    #[test]
+    fn le_selecteur_de_societes_bascule_au_clavier() {
+        let mut app = App::memoire();
+        let nom_depart = app.store.societe().unwrap().nom;
+        lancer_cli(&mut app, "/societes nouvelle --nom \"Atelier Bis\" --regime reel");
+        let mut vue = Vue::nouvelle();
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('e')));
+        let sel = vue.selecteur.as_ref().expect("sélecteur de sociétés");
+        assert_eq!(sel.options.len(), 2, "une ligne par société");
+        assert!(
+            sel.options[sel.index].courant,
+            "la ligne choisie au départ est la société courante"
+        );
+        assert!(sel.options.iter().any(|o| o.libelle == "Atelier Bis"));
+        // ↓ puis Entrée : on bascule sur l'autre société, en une touche.
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Down));
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Enter));
+        assert!(vue.selecteur.is_none(), "le sélecteur se referme");
+        assert!(vue.message.contains("Société courante"), "{}", vue.message);
+        assert_eq!(app.store.societe().unwrap().nom, nom_depart);
+        // Échap referme sans rien changer.
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('e')));
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Esc));
+        assert!(vue.selecteur.is_none());
+        assert!(vue.message.contains("annulée"), "{}", vue.message);
+        assert_eq!(app.store.societe().unwrap().nom, nom_depart);
+    }
+
+    #[test]
+    fn le_selecteur_de_sessions_ouvre_une_connexion_masquee() {
+        let mut app = App::memoire();
+        lancer_cli(
+            &mut app,
+            "/utilisateurs nouveau jojo --mot-de-passe \"MotDePasse123!\" --role utilisateur",
+        );
+        let mut vue = Vue::nouvelle();
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('u')));
+        let sel = vue.selecteur.as_ref().expect("sélecteur de sessions");
+        assert_eq!(sel.options.len(), 1);
+        assert_eq!(sel.options[0].libelle, "jojo");
+        assert!(sel.options[0].detail.contains("utilisateur"), "{:?}", sel.options[0].detail);
+        // Entrée : le mot de passe est demandé, jamais affiché.
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Enter));
+        let form = vue.formulaire.as_ref().expect("formulaire de connexion");
+        assert_eq!(form.champs[0].valeur, "jojo", "compte pré-rempli");
+        assert!(form.champs[1].secret);
+        for c in "MotDePasse123!".chars() {
+            vue.touche(&mut app, KeyEvent::from(KeyCode::Char(c)));
+        }
+        let form = vue.formulaire.as_ref().unwrap();
+        assert_eq!(form.champs[1].valeur, "MotDePasse123!");
+        assert_eq!(form.champs[1].affichee(), "•".repeat(14));
+        assert!(!form.champs[1].affichee().contains("MotDePasse"));
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Enter));
+        assert!(vue.formulaire.is_none(), "{:?}", vue.formulaire);
+        assert_eq!(app.store.session(), "jojo");
+        assert!(vue.message.contains("Connecté"), "{}", vue.message);
+        // Le sélecteur propose alors la session locale (déconnexion).
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Char('u')));
+        let sel = vue.selecteur.as_ref().unwrap();
+        assert_eq!(sel.options[0].libelle, "Session locale");
+        assert!(sel.options[1].courant, "le compte connecté est marqué");
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.store.session(), "local");
+    }
+
+    #[test]
+    fn un_selecteur_sans_choix_le_dit_au_lieu_de_planter() {
+        let mut app = App::memoire();
+        let mut vue = Vue::nouvelle();
+        vue.selecteur = Some(Selecteur {
+            titre: "Vide",
+            invite: "rien à choisir",
+            options: Vec::new(),
+            index: 0,
+        });
+        vue.touche(&mut app, KeyEvent::from(KeyCode::Enter));
+        assert!(vue.selecteur.is_none());
+        assert!(vue.message.contains("Aucun choix"), "{}", vue.message);
     }
 
     #[test]
