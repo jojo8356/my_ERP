@@ -40,11 +40,6 @@ impl Courriel {
         self.pieces.push((nom.to_string(), contenu));
         self
     }
-
-    pub fn sans_piece(mut self) -> Self {
-        self.pieces.clear();
-        self
-    }
 }
 
 // ------------------------------------------------------------ Modèles
@@ -172,27 +167,6 @@ pub fn courriel_relance(
     Courriel::nouveau(&societe.email, &client.email, &sujet, corps).avec_piece(
         &format!("{}.pdf", document.numero),
         pdf::facture(societe, client, document, regime),
-    )
-}
-
-/// Code de connexion / lien magique (SEC-03) — durée de vie 15 minutes.
-pub fn courriel_code_connexion(
-    societe: &Societe,
-    utilisateur_nom: &str,
-    destinataire: &str,
-    code: &str,
-) -> Courriel {
-    let corps = format!(
-        "Bonjour,\n\nVoici votre code de connexion à l'ERP de {} : {code}\n\n\
-         Ce code est valable 15 minutes et ne peut être utilisé qu'une fois.\n\
-         Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.\n",
-        societe.nom
-    );
-    Courriel::nouveau(
-        &societe.email,
-        destinataire,
-        &format!("Code de connexion ERP — {utilisateur_nom}"),
-        corps,
     )
 }
 

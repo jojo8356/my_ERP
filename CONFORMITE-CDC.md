@@ -47,7 +47,7 @@ dans deux jobs : sans base, et avec un service PostgreSQL 16
 | Exigence | Statut | Où | Vérifié par |
 |---|---|---|---|
 | EF-CPT-01 Écritures automatiques (plan comptable FR, journaux VE/BQ/AC) | ✔ | `compta::ecritures_depuis` (411000/401000/512000/706000/707000/445710/445660/607000/370000/627000), `store::regenerer_ecritures` | `compta::tests` (6), `store::tests` |
-| EF-CPT-02 TVA collectée/déductible par taux et période | ✔ | `compta::recap_tva_par_taux`, `recap_tva_ecritures`, `/compta tva [période]` | `compta::tests::recap_tva_par_taux_et_periode`, scénario §8 |
+| EF-CPT-02 TVA collectée/déductible par taux et période | ✔ | `compta::recap_tva_par_taux`, `/compta tva [période]` | `compta::tests::recap_tva_par_taux_et_periode`, scénario §8 |
 | EF-CPT-03 Export FEC conforme + journaux | ✔ | `compta::fec`/`journal`/`journaux`, `/compta fec [fichier]` | `compta::tests` (18 colonnes, montants `1234,56`), scénario §8 |
 | EF-CPT-04 Rapprochement bancaire (import + lettrage semi-auto) | ◑ | `store::importer_releve`/`lettrer`, `/compta rapprocher\|lettrer` | `store::tests`, scénario §9 · limite : **CSV uniquement** (pas d'OFX) |
 | EF-CPT-05 Tableau de bord finance | ✔ | `store::ca_mensuel`/`encours`/`tresorerie`, `/compta tableau`, `/` (tableau de bord) | `cli::tests`, scénario §8 |

@@ -352,11 +352,6 @@ impl Ligne {
         self
     }
 
-    pub fn avec_article(mut self, article_id: i64) -> Self {
-        self.article_id = article_id;
-        self
-    }
-
     /// Total HT de la ligne, remise déduite.
     pub fn total_ht(&self) -> Cents {
         let brut = arrondi(self.quantite_milli * self.prix_unitaire_ht, 1000);
@@ -696,13 +691,6 @@ impl TypeClient {
             _ => Self::Professionnel,
         }
     }
-    /// Un professionnel exige une facture ; un particulier seulement ≥ 25 € (CDC §11.2).
-    pub fn facture_obligatoire(&self, montant_ttc: Cents) -> bool {
-        match self {
-            Self::Particulier => montant_ttc >= 2_500,
-            _ => true,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -942,12 +930,6 @@ impl RegimeVente {
         match self {
             Self::AchatRevente => "achat-revente (BIC)",
             Self::Personnel => "bien personnel (non imposable)",
-        }
-    }
-    pub fn compte_vente(&self) -> &'static str {
-        match self {
-            Self::AchatRevente => "707000",
-            Self::Personnel => "708500",
         }
     }
 }

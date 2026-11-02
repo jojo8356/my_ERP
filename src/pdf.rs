@@ -371,15 +371,6 @@ pub fn facture(societe: &Societe, client: &Client, document: &Document, regime: 
     pdf.octets()
 }
 
-/// Compte rendu de démonstration utilisé par les tests (PDF générique).
-pub fn texte_simple(lignes: &[&str]) -> Vec<u8> {
-    let mut pdf = Pdf::nouveau();
-    for ligne in lignes {
-        pdf.texte(*ligne);
-    }
-    pdf.octets()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

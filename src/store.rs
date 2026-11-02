@@ -184,10 +184,7 @@ impl NouveauDocument {
         self.lignes = lignes;
         self
     }
-    pub fn avec_echeance(mut self, echeance: &str) -> Self {
-        self.echeance = echeance.to_string();
-        self
-    }
+
     pub fn avec_activite(mut self, activite: &str) -> Self {
         self.activite = activite.to_string();
         self
@@ -760,10 +757,6 @@ impl Store {
         self.societes.clone()
     }
 
-    pub fn id_societe(&self) -> i64 {
-        self.societe_courante
-    }
-
     /// Régime de TVA de la société courante, en lecture seule.
     ///
     /// Le CLI doit calculer des totaux TTC pour *afficher* (listes, JSON, CSV) :
@@ -1002,10 +995,6 @@ impl Store {
             .filter(|c| id == 0 || c.societe_id == id)
             .cloned()
             .collect()
-    }
-
-    pub fn tous_clients(&self) -> Vec<Client> {
-        self.clients.clone()
     }
 
     pub fn creer_client(&mut self, mut client: Client) -> Resultat<Client> {

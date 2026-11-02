@@ -13,7 +13,7 @@
 //! accessible sans passer par la commande explicite (le CLI demande la
 //! référence), donc aucune ne peut être déclenchée par une touche seule.
 
-use crate::cli::{tokeniser, App};
+use crate::cli::App;
 use crate::theme;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{
@@ -782,11 +782,6 @@ fn boucle(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> R
             }
         }
     }
-}
-
-/// Aide-mémoire : le CLI et la TUI partagent le même analyseur de commandes.
-pub fn commande_saisie(ligne: &str) -> Vec<String> {
-    tokeniser(ligne)
 }
 
 #[cfg(test)]

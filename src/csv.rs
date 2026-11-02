@@ -1,10 +1,16 @@
 //! Import / export CSV — « des fichiers, pas des silos » (INT-03, ENF-PORT-01).
 //!
-//! - lecture tolérante : séparateur détecté (`;`, `,`, tabulation), guillemets
-//!   doublés, BOM UTF-8, lignes vides ignorées ;
-//! - en-têtes reconnues par synonymes français/anglais (`nom`, `client`,
-//!   `designation`, `prix`, `montant`…) ;
-//! - montants acceptés en centimes entiers ou en euros à virgule.
+//! Le CSV n'est **jamais** un format de stockage : les tables vivent en TSV
+//! (`fichier.rs`) ou dans PostgreSQL (`bdd.rs`). Ce module ne sert qu'à
+//! - **exporter** une liste (`--csv`, `/clients exporter`, `/vinted exporter`) ;
+//! - **importer** un fichier venu d'ailleurs (clients, ventes Vinted, relevé
+//!   bancaire) ;
+//! - lire les montants/quantités/taux saisis en texte par un humain.
+//!
+//! Lecture tolérante : séparateur détecté (`;`, `,`, tabulation), guillemets
+//! doublés, BOM UTF-8, lignes vides ignorées ; en-têtes reconnues par synonymes
+//! français/anglais (`nom`, `client`, `designation`, `prix`, `montant`…) ;
+//! montants acceptés en centimes entiers ou en euros à virgule.
 //!
 //! Aucune dépendance : le format CSV est assez simple pour être écrit ici.
 

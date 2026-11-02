@@ -90,10 +90,6 @@ impl LigneTable {
     pub fn booleen(&self, colonne: &str) -> bool {
         matches!(self.texte(colonne).trim(), "1" | "oui" | "true" | "vrai")
     }
-
-    pub fn present(&self, colonne: &str) -> bool {
-        self.colonnes.contains(&colonne)
-    }
 }
 
 // ------------------------------------------------------------ Écriture

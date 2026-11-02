@@ -361,31 +361,6 @@ pub fn recap_tva_par_taux(
     recap
 }
 
-/// TVA collectée / déductible déduite des écritures, par période (AAAA-MM).
-pub fn recap_tva_ecritures(ecritures: &[Ecriture]) -> Vec<(String, Cents, Cents)> {
-    let mut recap: Vec<(String, Cents, Cents)> = Vec::new();
-    for e in ecritures {
-        if e.compte != TVA_COLLECTEE && e.compte != TVA_DEDUCTIBLE {
-            continue;
-        }
-        let periode = periode_de(&e.date_ecriture);
-        let entree = match recap.iter_mut().find(|r| r.0 == periode) {
-            Some(e) => e,
-            None => {
-                recap.push((periode, 0, 0));
-                recap.last_mut().unwrap()
-            }
-        };
-        if e.compte == TVA_COLLECTEE {
-            entree.1 += e.credit - e.debit;
-        } else {
-            entree.2 += e.debit - e.credit;
-        }
-    }
-    recap.sort_by(|a, b| a.0.cmp(&b.0));
-    recap
-}
-
 // ------------------------------------------------------------ Balance & journaux
 
 /// Balance par compte : (compte, total débit, total crédit, solde).
