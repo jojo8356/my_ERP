@@ -48,8 +48,14 @@ jobs:
                   or nu.startswith("---- ")
               )
               if interessant:
-                  contexte = [ligne] + [l for l in lignes[i + 1:i + 3] if l.strip()]
-                  annonce("échec", SÉPARATEUR.join(contexte))
+                  # Le message d'assertion est sur les lignes qui suivent : on
+                  # les remonte jusqu'à la première ligne vide.
+                  suivant = []
+                  for extra in lignes[i + 1:i + 6]:
+                      if not extra.strip() or extra.strip().startswith("note: run with"):
+                          break
+                      suivant.append(extra)
+                  annonce("échec", SÉPARATEUR.join([ligne] + suivant))
 
           # 2. la fin du journal, en morceaux : l'annotation est limitée à ~4 ko
           fin = SÉPARATEUR.join(lignes[-40:])

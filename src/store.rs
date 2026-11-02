@@ -3004,8 +3004,10 @@ mod tests {
     #[test]
     fn code_de_connexion_expire_et_exige_un_email() {
         let mut s = Store::memoire();
-        let mut admin = Utilisateur::nouveau("jojo", Role::Admin);
-        s.creer_utilisateur(admin.clone()).unwrap();
+        // `creer_utilisateur` attribue l'identifiant : on garde l'objet renvoyé.
+        let mut admin = s
+            .creer_utilisateur(Utilisateur::nouveau("jojo", Role::Admin))
+            .unwrap();
         // Sans adresse e-mail, aucun envoi possible : le message dit quoi faire.
         let erreur = s.ouvrir_code_connexion("jojo").unwrap_err();
         assert!(erreur.contains("adresse e-mail"), "{erreur}");

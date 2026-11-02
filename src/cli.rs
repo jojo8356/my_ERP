@@ -3655,7 +3655,12 @@ mod tests {
 
     #[test]
     fn facture_obligatoire_annoncee_dans_le_cli() {
-        let mut app = app();
+        // Sur disque : l'envoi du devis écrit un message dans la boîte d'envoi,
+        // qui ne doit pas atterrir dans le dépôt pendant les tests.
+        let dossier = std::env::temp_dir().join(format!("erp-facture-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dossier);
+        std::fs::create_dir_all(&dossier).unwrap();
+        let mut app = App::ouvrir(&dossier).unwrap();
         lancer(&mut app, "/societe modifier --siren 123456789 --adresse \"1 rue\" --ville Nice");
         lancer(&mut app, "/clients nouveau --nom \"Martin\" --type particulier");
         lancer(&mut app, "/clients nouveau --nom \"Atelier Dupont\" --type pro");
@@ -3684,15 +3689,21 @@ mod tests {
             "/factures nouvelle --client dupont --ligne \"Audit;1;1,00\"",
         );
         assert!(texte.contains("professionnel"), "{texte}");
-        // Un devis transformé en facture rappelle la même règle.
+        // Un devis transformé en facture rappelle la même règle. Un devis doit
+        // être envoyé puis accepté avant d'être transformé (traçabilité EF-FAC-01).
         lancer(&mut app, "/devis nouvelle --client martin --ligne \"Étude;1;12,00\"");
         let numero = app
             .store
             .documents(Some(TypeDocument::Devis))[0]
             .numero
             .clone();
+        let envoi = lancer(&mut app, &format!("/devis {numero} envoyer"));
+        assert!(!envoi.contains("ERREUR"), "{envoi}");
+        let accepte = lancer(&mut app, &format!("/devis {numero} accepter"));
+        assert!(!accepte.contains("ERREUR"), "{accepte}");
         let texte = lancer(&mut app, &format!("/devis {numero} transformer"));
         assert!(texte.contains("facultative"), "{texte}");
+        let _ = std::fs::remove_dir_all(&dossier);
     }
 
     #[test]
