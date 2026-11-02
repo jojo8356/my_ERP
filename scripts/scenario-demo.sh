@@ -7,7 +7,7 @@ set -euo pipefail
 ERP="cargo run --quiet --"
 export ERP_DONNEES_DIR="${ERP_DONNEES_DIR:-donnees}"
 DONNEES="$ERP_DONNEES_DIR"
-mkdir -p "$DONNEES"
+mkdir -p "$DONNEES/exports"
 
 echo "── 1. Création d'un client"
 $ERP /clients nouveau --nom "Atelier Dupont" --type pro --email contact@example.fr --ville Nice

@@ -342,7 +342,7 @@ impl Store {
             .unwrap_or(1)
             .max(1);
 
-        let mut decoder = |table: &str| fichier::lire_table(&dossier, table);
+        let decoder = |table: &str| fichier::lire_table(&dossier, table);
 
         for l in decoder("societes")? {
             self.societes.push(fichier::decoder_societe(&l)?);
