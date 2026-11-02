@@ -25,27 +25,36 @@ jobs:
           export ERP_DONNEES_DIR=/tmp/erp-demo
           bash scripts/scenario-demo.sh > /tmp/scenario.log 2>&1; code=$?
           tail -30 /tmp/scenario.log; exit $code
-      - name: Diagnostic (erreurs et échecs de test dans l'onglet Annotations)
+      - name: Diagnostic (digest des erreurs dans une annotation unique)
         if: failure()
         run: |
           python3 - <<'PY'
           import os, re
-          for chemin in ("/tmp/build.log", "/tmp/tests.log", "/tmp/scenario.log"):
+
+          def interessant(ligne):
+              return (
+                  ligne.startswith("error")
+                  or ligne.startswith("---- ")
+                  or " panicked at " in ligne
+                  or ligne.lstrip().startswith(("left:", "right:"))
+                  or "assertion" in ligne
+                  or ligne.startswith("✅")
+                  or "introuvable" in ligne
+                  or "invalide" in ligne
+              )
+
+          morceaux = []
+          for chemin in ("/tmp/tests.log", "/tmp/scenario.log", "/tmp/build.log"):
               if not os.path.exists(chemin):
                   continue
               lignes = open(chemin, encoding="utf-8", errors="replace").read().splitlines()
-              print(f"::group::{chemin} ({len(lignes)} lignes)")
+              bloc = []
               for i, ligne in enumerate(lignes):
-                  interessant = (
-                      ligne.startswith("error")
-                      or ligne.startswith("---- ")
-                      or " panicked at " in ligne
-                      or re.match(r"^\s*(left|right): ", ligne)
-                      or "assertion" in ligne
-                  )
-                  if interessant:
-                      for extra in [ligne] + lignes[i + 1:i + 5]:
-                          if extra.strip():
-                              print("::error::" + extra.replace("%", "%25"))
-              print("::endgroup::")
+                  if interessant(ligne):
+                      bloc.extend(l for l in lignes[i:i + 6] if l.strip())
+              if bloc:
+                  morceaux.append(f"=== {chemin} ===")
+                  morceaux.extend(bloc[:60])
+          digest = "\n".join(morceaux)[:7000] or "aucune ligne d'erreur reconnue"
+          print("::error::" + digest.replace("%", "%25").replace("\n", "%0A"))
           PY
