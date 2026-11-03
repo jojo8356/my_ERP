@@ -1,16 +1,31 @@
 [package]
 name = "my-erp"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "ERP CLI en Rust — navigation par chemins, sans GUI (voir CDC-ERP-CLI.md)"
 license = "MIT"
+build = "build.rs"
 
 # Chromat : couleurs du CLI (ADR-004). Ratatui + Crossterm : TUI et
-# formulaires interactifs (ADR-005).
+# formulaires interactifs (ADR-005). Rustorm : schéma `.rsm`, client typé
+# généré à la compilation et migration PostgreSQL (ADR-006) — utilisé sans
+# base de données : le stockage local s'aligne sur les colonnes du schéma.
 [dependencies]
 chromat = { git = "https://github.com/jojo8356/chromat", tag = "v0.1.1" }
 ratatui = "0.29"
 crossterm = "0.28"
+rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0" }
+
+[features]
+# Par défaut : aucune base de données (stockage fichier piloté par le schéma).
+# `cargo build --features postgres` active le connecteur PostgreSQL de Rustorm
+# et le backend `src/bdd.rs` (ADR-006 et ADR-009) : la même application, les
+# mêmes commandes, mais l'état est lu/écrit dans PostgreSQL via l'ORM.
+# Le connecteur `postgres` de Rustorm passe par libpq (paquet `libpq-dev`).
+postgres = ["rustorm/postgres"]
+
+[build-dependencies]
+rustorm = { git = "https://github.com/jojo8356/rustorm", tag = "v0.1.0" }
 
 [profile.release]
 opt-level = 3

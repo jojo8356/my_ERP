@@ -5,23 +5,133 @@ on:
   pull_request:
 
 jobs:
-  build-test:
+  # Recette complète sans base de données : c'est le mode par défaut de l'ERP
+  # (fichiers locaux pilotés par le schéma Rustorm).
+  recette:
     runs-on: ubuntu-latest
+    env:
+      JOURNAL: /tmp/test-all.log
     steps:
       - uses: actions/checkout@v4
-      - name: Compiler (Chromat Git + Ratatui/Crossterm crates.io, ADR-004/005)
+      - name: Recette complète (test-all.sh, sans base)
         run: |
           set +e
-          cargo build > /tmp/build.log 2>&1; code=$?
-          tail -5 /tmp/build.log; exit $code
-      - name: Tests unitaires et métier
+          bash test-all.sh --rapide > /tmp/test-all.log 2>&1; code=$?
+          tail -40 /tmp/test-all.log
+          exit $code
+      - name: Diagnostic (erreurs et échecs de test dans l'onglet Annotations)
+        if: failure()
+        run: |
+          python3 - "$JOURNAL" <<'PY'
+          import sys
+
+          chemin = sys.argv[1]
+          try:
+              lignes = open(chemin, encoding="utf-8", errors="replace").read().splitlines()
+          except OSError:
+              sys.exit(0)
+
+          SÉPARATEUR = chr(10)
+
+          def annonce(titre, extrait):
+              print("::error title=%s::%s" % (titre, extrait.replace("%", "%25")[:3800]))
+
+          # 1. les lignes qui expliquent l'échec
+          for i, ligne in enumerate(lignes):
+              nu = ligne.strip()
+              interessant = (
+                  nu.startswith("✗")
+                  or nu.startswith("error[")
+                  or nu.startswith("error:")
+                  or " panicked at " in ligne
+                  or " test result: FAILED" in ligne
+                  or nu.startswith("---- ")
+              )
+              if interessant:
+                  # Le message d'assertion est sur les lignes qui suivent : on
+                  # les remonte jusqu'à la première ligne vide.
+                  suivant = []
+                  for extra in lignes[i + 1:i + 6]:
+                      if not extra.strip() or extra.strip().startswith("note: run with"):
+                          break
+                      suivant.append(extra)
+                  annonce("échec", SÉPARATEUR.join([ligne] + suivant))
+
+          # 2. la fin du journal, en morceaux : l'annotation est limitée à ~4 ko
+          fin = SÉPARATEUR.join(lignes[-40:])
+          for debut in range(0, len(fin), 3500):
+              annonce("fin du journal", fin[debut:debut + 3500])
+          PY
+
+  # Le même ERP, mais l'état vit dans PostgreSQL : Rustorm crée le schéma
+  # (migration), puis lit et écrit toutes les tables dans une transaction.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_DB: erp
+          # Le connecteur « local sans TLS » de Rustorm n'envoie jamais de mot
+          # de passe en clair (SEC-07) : la base de CI accepte les connexions
+          # locales sans authentification, exactement comme un serveur de
+          # développement jetable.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erp -d erp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      ERP_DATABASE_URL: postgres://erp@127.0.0.1:5432/erp
+      JOURNAL: /tmp/test-all-pg.log
+    steps:
+      - uses: actions/checkout@v4
+      - name: libpq (connecteur PostgreSQL de Rustorm)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libpq-dev
+      - name: Recette complète avec base (feature postgres)
         run: |
           set +e
-          cargo test > /tmp/tests.log 2>&1; code=$?
-          tail -5 /tmp/tests.log; exit $code
-      - name: Scénario complet (persistance fichier, process séparés)
+          bash test-all.sh --features postgres --bdd "$ERP_DATABASE_URL" > /tmp/test-all-pg.log 2>&1; code=$?
+          tail -40 /tmp/test-all-pg.log
+          exit $code
+      - name: Diagnostic (erreurs et échecs de test dans l'onglet Annotations)
+        if: failure()
         run: |
-          set +e
-          export ERP_DONNEES_DIR=/tmp/erp-demo
-          bash scripts/scenario-demo.sh > /tmp/scenario.log 2>&1; code=$?
-          tail -30 /tmp/scenario.log; exit $code
+          python3 - "$JOURNAL" <<'PY'
+          import sys
+
+          chemin = sys.argv[1]
+          try:
+              lignes = open(chemin, encoding="utf-8", errors="replace").read().splitlines()
+          except OSError:
+              sys.exit(0)
+
+          SÉPARATEUR = chr(10)
+
+          def annonce(titre, extrait):
+              print("::error title=%s::%s" % (titre, extrait.replace("%", "%25")[:3800]))
+
+          # 1. les lignes qui expliquent l'échec
+          for i, ligne in enumerate(lignes):
+              nu = ligne.strip()
+              interessant = (
+                  nu.startswith("✗")
+                  or nu.startswith("error[")
+                  or nu.startswith("error:")
+                  or " panicked at " in ligne
+                  or " test result: FAILED" in ligne
+                  or nu.startswith("---- ")
+              )
+              if interessant:
+                  contexte = [ligne] + [l for l in lignes[i + 1:i + 3] if l.strip()]
+                  annonce("échec", SÉPARATEUR.join(contexte))
+
+          # 2. la fin du journal, en morceaux : l'annotation est limitée à ~4 ko
+          fin = SÉPARATEUR.join(lignes[-40:])
+          for debut in range(0, len(fin), 3500):
+              annonce("fin du journal", fin[debut:debut + 3500])
+          PY
