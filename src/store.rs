@@ -3238,6 +3238,13 @@ mod tests {
         s.clients[idx].cree_le = "2022-01-15".to_string();
         s.clients[idx].modifie_le = "2022-01-15".to_string();
 
+        // La fiche « vivante » est créée aujourd'hui : on fige aussi ses dates
+        // de création/modification, sinon le test dépendrait du jour où il
+        // tourne (le contact le plus récent serait « aujourd'hui »).
+        let idx = s.clients.iter().position(|c| c.id == vivant.id).unwrap();
+        s.clients[idx].cree_le = "2026-11-02".to_string();
+        s.clients[idx].modifie_le = "2026-11-02".to_string();
+
         assert_eq!(s.dernier_contact(vivant.id), "2026-11-02");
         assert_eq!(s.dernier_contact(dormant.id), "2022-01-15");
         let perimes = s.prospects_perimes("2026-11-02");
