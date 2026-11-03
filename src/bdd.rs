@@ -549,6 +549,42 @@ mod integration {
 
     #[test]
     #[ignore = "nécessite une base jetable (ERP_DATABASE_URL)"]
+    fn les_fichiers_s_exportent_vers_postgresql() {
+        // Migration d'une exploitation locale vers un serveur : l'état des
+        // fichiers part en une transaction, et la relecture ne dépend plus du
+        // dossier local (c'est ce que promet `/admin export bdd`).
+        let url = url();
+        let dossier = std::env::temp_dir().join(format!("erp-vers-bdd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dossier);
+        {
+            let mut app = App::ouvrir(&dossier).expect("magasin local");
+            lancer(
+                &mut app,
+                "/societe modifier --nom \"Atelier Local\" --siren 123456789 \\
+                 --adresse \"1 rue de la Paix\" --ville Nice",
+            );
+            lancer(&mut app, "/clients nouveau --nom \"Client Fichier\" --type pro");
+            lancer(&mut app, "/clients fichier note \"Migré depuis les fichiers\"");
+            let texte = lancer(&mut app, &format!("/admin export bdd {url}"));
+            assert!(texte.contains("écrites dans PostgreSQL"), "{texte}");
+        }
+        // Nouvelle ouverture, uniquement sur la base : tout doit y être.
+        let mut app = App::ouvrir_bdd(&url).expect("connexion à la base cible");
+        let clients = lancer(&mut app, "/clients");
+        assert!(clients.contains("Client Fichier"), "{clients}");
+        let notes = lancer(&mut app, "/clients fichier notes");
+        assert!(notes.contains("Migré depuis les fichiers"), "{notes}");
+        // `/admin chemin` décrit alors la base, pas le dossier.
+        let chemin = lancer(&mut app, "/admin chemin");
+        assert!(chemin.contains("PostgreSQL"), "{chemin}");
+        assert!(chemin.contains("pg_dump"), "{chemin}");
+        let json = lancer(&mut app, "/admin chemin --json");
+        assert!(json.contains("\"mode\":\"postgresql\""), "{json}");
+        let _ = std::fs::remove_dir_all(&dossier);
+    }
+
+    #[test]
+    #[ignore = "nécessite une base jetable (ERP_DATABASE_URL)"]
     fn le_code_de_connexion_est_persiste_dans_la_base() {
         // Le code envoyé par e-mail doit survivre au processus : il est stocké
         // (sous forme d'empreinte) dans la colonne dédiée du compte.

@@ -115,6 +115,20 @@ fn masquer_courriel(adresse: &str) -> String {
     }
 }
 
+/// Chemin absolu et normalisé (sans `..`, sans lien symbolique) : c'est ce
+/// qu'on peut copier tel quel dans `cp`, `rsync` ou une unité systemd.
+fn absolu(chemin: &Path) -> std::path::PathBuf {
+    std::fs::canonicalize(chemin).unwrap_or_else(|_| {
+        if chemin.is_absolute() {
+            chemin.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .map(|c| c.join(chemin))
+                .unwrap_or_else(|_| chemin.to_path_buf())
+        }
+    })
+}
+
 fn json_echapper(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -257,7 +271,7 @@ Navigation par chemins (comme des URL, à connaître par cœur) :
   erp /societe modifier --siren 123456789 --adresse \"1 rue …\" --ville Nice
   erp /devises                   taux datés   |  /devises taux USD 2026-10-01 0,92
   erp /utilisateurs              comptes, rôles, 2FA      |  /auth connexion jojo
-  erp /admin sante|schema|audit|sauvegarde|mentions
+  erp /admin sante|chemin|export|schema|audit|sauvegarde|mentions
 Options : --json, --csv, --page N, --lignes N, --tag, --statut, --impayees, --retard, --societe.
 Mode interactif : lancez `erp` seul (q pour quitter, ? = aide du contexte, .. = remonter).
 Interface plein écran : `erp tui` (Tab = module, ↑↓ = naviguer, v = valider, p = payer, q = quitter).
@@ -333,6 +347,9 @@ TUI : touche e               sélecteur de sociétés (Entrée bascule)
 TUI : touche u               sélecteur de sessions (mot de passe masqué)",
         Some("admin") => "\
 /admin sante                 fichiers, lignes, sauvegarde, chaîne d'audit
+/admin chemin [--json]       où sont les données (dossier absolu / URL de la base)
+/admin export [csv|tsv] [--dossier <dest>]   toutes les tables d'un bloc
+/admin export bdd <url>      envoie l'état courant dans PostgreSQL (migration)
 /admin schema                modèle Rustorm (--sql pour la migration PostgreSQL)
 /admin bdd                   support de stockage et état de la base (feature postgres)
 /admin audit [--verifier]    journal d'audit infalsifiable
@@ -3252,6 +3269,32 @@ Créez un administrateur : /utilisateurs nouveau jojo --role admin --mot-de-pass
                 Ok(())
             }
             Some("bdd") | Some("base") => self.cmd_bdd(&rest[1..], sortie),
+            // Où sont mes données ? (chemin exact, prêt à copier)
+            Some("chemin") | Some("ou") | Some("emplacement") => {
+                self.cmd_chemin(options, sortie)
+            }
+            // Tout exporter d'un bloc : CSV/TSV à côté, ou vers une base.
+            Some("export") | Some("exporter") => match rest.get(1).map(|s| s.to_lowercase()) {
+                Some(f) if f == "bdd" || f == "base" || f == "postgres" => {
+                    let url = rest
+                        .get(2)
+                        .copied()
+                        .map(|s| s.to_string())
+                        .or_else(|| opt(options, "bdd").map(|s| s.to_string()))
+                        .or_else(|| std::env::var("ERP_DATABASE_URL").ok())
+                        .ok_or(
+                            "usage : /admin export bdd postgres://utilisateur@hote:5432/base \
+                             (ou --bdd … / ERP_DATABASE_URL)",
+                        )?;
+                    self.exporter_vers_bdd(&url, sortie)
+                }
+                Some(f) if f == "tsv" => self.exporter_tables("tsv", options, sortie),
+                Some(f) if f == "csv" => self.exporter_tables("csv", options, sortie),
+                None => self.exporter_tables("csv", options, sortie),
+                Some(autre) => Err(format!(
+                    "format « {autre} » inconnu — essayez : /admin export [csv|tsv|bdd <url>]"
+                )),
+            },
             Some("schema") => {
                 if drapeau(options, "sql") || rest.iter().any(|s| s.eq_ignore_ascii_case("sql")) {
                     return ecrire(sortie, crate::orm::ddl_postgres()?);
@@ -3327,8 +3370,291 @@ Créez un administrateur : /utilisateurs nouveau jojo --role admin --mot-de-pass
                 ecrire(sortie, theme::succes(format!("✓ {resume}")))
             }
             Some("mentions") => self.mentions(sortie),
-            _ => Err("usage : /admin sante | schema [sql] | audit [verifier] | sauvegarde | sauvegardes | restaurer <nom> | mentions".into()),
+            _ => Err(
+                "usage : /admin sante | chemin [--json] | export [csv|tsv|bdd <url>] | \
+                 schema [sql] | bdd | audit [verifier] | sauvegarde | sauvegardes | \
+                 restaurer <nom> | mentions"
+                    .into(),
+            ),
         }
+    }
+
+    /// **Où sont mes données, exactement** : dossier absolu des fichiers (ou
+    /// URL de la base, mot de passe masqué), une ligne par table avec sa taille,
+    /// et les commandes prêtes à copier pour les emporter ailleurs.
+    ///
+    /// `--json` donne la même information en machine, pour un script de
+    /// sauvegarde ou un monitoring.
+    fn cmd_chemin(&mut self, options: &Options, sortie: &mut dyn Write) -> Resultat<()> {
+        let support = self.store.support();
+        let dossier = self.store.dossier().map(absolu);
+        let base = self.store.base_masquee();
+        let mut tables: Vec<(String, String, u64)> = Vec::new();
+        let mut total = 0u64;
+        if let Some(dossier) = &dossier {
+            for (table, _) in crate::orm::tables() {
+                let chemin = crate::fichier::chemin_table(dossier, table);
+                let octets = std::fs::metadata(&chemin).map(|m| m.len()).unwrap_or(0);
+                total += octets;
+                tables.push((table.to_string(), chemin.display().to_string(), octets));
+            }
+        }
+        let dossier_texte = dossier
+            .as_ref()
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|| "(aucun : mode mémoire ou base)".to_string());
+        let courriels = dossier.as_ref().map(|d| d.join("courriels"));
+        let sauvegardes = dossier.as_ref().map(|d| d.join("sauvegardes"));
+        let comptes = |dossier: &Option<std::path::PathBuf>| -> usize {
+            dossier
+                .as_ref()
+                .and_then(|d| std::fs::read_dir(d).ok())
+                .map(|e| e.filter(|f| f.is_ok()).count())
+                .unwrap_or(0)
+        };
+        let copie = format!("cp -a \"{dossier_texte}\" /media/backup/  # ou rsync -a");
+        let dump = base
+            .as_ref()
+            .map(|b| format!("pg_dump \"{b}\" > sauvegarde.sql"));
+
+        if drapeau(options, "json") {
+            let mut json = String::from("{");
+            json.push_str(&format!("\"support\":\"{}\",", json_echapper(&support)));
+            json.push_str(&format!(
+                "\"mode\":\"{}\",",
+                if base.is_some() {
+                    "postgresql"
+                } else if dossier.is_some() {
+                    "fichiers"
+                } else {
+                    "memoire"
+                }
+            ));
+            json.push_str(&format!(
+                "\"dossier\":\"{}\",\"octets\":{total},",
+                json_echapper(if dossier.is_some() { dossier_texte.as_str() } else { "" })
+            ));
+            match &base {
+                Some(url) => json.push_str(&format!("\"base\":\"{}\",", json_echapper(url))),
+                None => json.push_str("\"base\":null,"),
+            }
+            json.push_str("\"tables\":[");
+            for (index, (table, chemin, octets)) in tables.iter().enumerate() {
+                if index > 0 {
+                    json.push(',');
+                }
+                json.push_str(&format!(
+                    "{{\"nom\":\"{}\",\"chemin\":\"{}\",\"octets\":{octets}}}",
+                    json_echapper(table),
+                    json_echapper(chemin)
+                ));
+            }
+            json.push_str("]}");
+            return ecrire(sortie, json);
+        }
+
+        ecrire(sortie, theme::titre("Chemin des données"))?;
+        ecrire(sortie, format!("  support      : {support}"))?;
+        ecrire(sortie, format!("  dossier      : {dossier_texte}"))?;
+        if dossier.is_some() {
+            ecrire(
+                sortie,
+                theme::info("  (variable ERP_DONNEES_DIR, ou l’option --donnees <dossier>)"),
+            )?;
+        }
+        if let Some(url) = &base {
+            ecrire(sortie, format!("  base         : {url}"))?;
+            ecrire(
+                sortie,
+                theme::info("  (variable ERP_DATABASE_URL, ou l’option --bdd <url>)"),
+            )?;
+        }
+        if !tables.is_empty() {
+            ecrire(
+                sortie,
+                format!("  tables       : {} fichier(s), {} au total", tables.len(), format_octets(total as i64)),
+            )?;
+            for (table, chemin, octets) in &tables {
+                ecrire(
+                    sortie,
+                    format!("    {table:<22} {:>10}  {chemin}", format_octets(*octets as i64)),
+                )?;
+            }
+            ecrire(
+                sortie,
+                format!(
+                    "  courriels    : {} message(s)   ·   sauvegardes : {}",
+                    comptes(&courriels),
+                    comptes(&sauvegardes)
+                ),
+            )?;
+        }
+        ecrire(sortie, "")?;
+        ecrire(sortie, theme::titre("Emporter les données"))?;
+        if dossier.is_some() {
+            ecrire(sortie, format!("  copier tel quel      : {copie}"))?;
+        }
+        ecrire(
+            sortie,
+            "  tout en CSV/TSV      : /admin export csv [--dossier <dest>]  (ou … tsv)".to_string(),
+        )?;
+        ecrire(
+            sortie,
+            "  vers PostgreSQL      : /admin export bdd postgres://utilisateur@hote:5432/base".to_string(),
+        )?;
+        match &dump {
+            Some(dump) => ecrire(sortie, format!("  depuis la base       : {dump}"))?,
+            None => ecrire(
+                sortie,
+                "  depuis la base       : (mode fichiers — aucun serveur à sauvegarder)".to_string(),
+            )?,
+        }
+        Ok(())
+    }
+
+    /// Exporte **toutes** les tables d'un bloc (CSV ou TSV), plus `meta.csv` et
+    /// un `manifeste.csv`. Les colonnes sont celles du schéma Rustorm, donc un
+    /// export suit automatiquement toute évolution du modèle.
+    fn exporter_tables(
+        &mut self,
+        format: &str,
+        options: &Options,
+        sortie: &mut dyn Write,
+    ) -> Resultat<()> {
+        let (tables, meta) = self.store.instantane()?;
+        let cible = match opt(options, "dossier") {
+            Some(dossier) => std::path::PathBuf::from(dossier),
+            None => match self.store.dossier() {
+                Some(dossier) => dossier.join("exports").join(format!(
+                    "export-{}",
+                    horodatage().replace(':', "-").replace(' ', "_")
+                )),
+                None => {
+                    return Err(
+                        "mode mémoire : précisez --dossier <dossier de sortie> pour exporter"
+                            .into(),
+                    )
+                }
+            },
+        };
+        std::fs::create_dir_all(&cible)
+            .map_err(|e| format!("création de {} : {e}", cible.display()))?;
+
+        let mut manifeste: Vec<Vec<String>> =
+            vec![vec!["table".into(), "lignes".into(), "colonnes".into(), "fichier".into()]];
+        let mut total = 0usize;
+        for (table, lignes) in &tables {
+            let table: &'static str = *table;
+            let colonnes = crate::orm::colonnes(table)
+                .ok_or_else(|| format!("table absente du schéma : {table}"))?;
+            let nom = if format == "tsv" {
+                // Le TSV est le format natif du magasin : mêmes colonnes, même
+                // échappement — on réutilise l'écrivain atomique existant.
+                crate::fichier::ecrire_table(&cible, table, lignes)?;
+                format!("tables/{table}.tsv")
+            } else {
+                let contenu = crate::csv::exporter(colonnes, lignes);
+                std::fs::write(cible.join(format!("{table}.csv")), contenu).map_err(|e| {
+                    format!("écriture de {} : {e}", cible.join(format!("{table}.csv")).display())
+                })?;
+                format!("{table}.csv")
+            };
+            total += lignes.len();
+            manifeste.push(vec![
+                table.to_string(),
+                lignes.len().to_string(),
+                colonnes.len().to_string(),
+                nom,
+            ]);
+        }
+
+        // Métadonnées (société courante, session, version, empreinte du schéma).
+        let mut cles: Vec<&String> = meta.keys().collect();
+        cles.sort();
+        let lignes_meta: Vec<Vec<String>> = cles
+            .iter()
+            .map(|cle| vec![(*cle).clone(), meta[*cle].clone()])
+            .collect();
+        std::fs::write(
+            cible.join("meta.csv"),
+            crate::csv::exporter(&["cle", "valeur"], &lignes_meta),
+        )
+        .map_err(|e| format!("écriture de meta.csv : {e}"))?;
+        std::fs::write(
+            cible.join("manifeste.csv"),
+            crate::csv::exporter(&["table", "lignes", "colonnes", "fichier"], &manifeste),
+        )
+        .map_err(|e| format!("écriture de manifeste.csv : {e}"))?;
+
+        self.store.journaliser(
+            "admin.export",
+            &format!("{format} : {} table(s), {total} ligne(s) → {}", tables.len(), cible.display()),
+        )?;
+        ecrire(
+            sortie,
+            theme::succes(format!(
+                "✓ {} table(s), {total} ligne(s) exportées en {} dans {}",
+                tables.len(),
+                format.to_uppercase(),
+                cible.display()
+            )),
+        )?;
+        ecrire(
+            sortie,
+            theme::info("  manifeste.csv décrit chaque fichier ; meta.csv contient la société et la session"),
+        )?;
+        ecrire(
+            sortie,
+            theme::info(format!(
+                "  relecture : /admin export {} --dossier {} (rejouable, écrase la cible)",
+                format,
+                cible.display()
+            )),
+        )
+    }
+
+    /// Envoie l'état courant dans PostgreSQL (fichiers → base, en une
+    /// transaction) : c'est le chemin de migration d'une exploitation locale
+    /// vers un serveur, sans réécrire les données à la main.
+    #[cfg(feature = "postgres")]
+    fn exporter_vers_bdd(&mut self, url: &str, sortie: &mut dyn Write) -> Resultat<()> {
+        let (tables, meta) = self.store.instantane()?;
+        let mut bdd = crate::bdd::Bdd::connecter(url)?;
+        let cree = bdd.migrer()?;
+        let total = bdd.enregistrer_tout(&tables, &meta)?;
+        let cible = crate::bdd::url_masquee(url);
+        self.store
+            .journaliser("admin.export-bdd", &format!("{cible} : {total} ligne(s)"))?;
+        ecrire(
+            sortie,
+            theme::succes(format!(
+                "✓ {total} ligne(s) de {} table(s) écrites dans PostgreSQL ({cible})",
+                tables.len()
+            )),
+        )?;
+        if cree {
+            ecrire(
+                sortie,
+                theme::info("  schéma créé par l’ORM (CREATE TABLE + index) avant l’écriture"),
+            )?;
+        }
+        ecrire(
+            sortie,
+            theme::info(format!(
+                "  utilisation : my-erp --bdd \"{cible}\" /clients  (ou ERP_DATABASE_URL)"
+            )),
+        )?;
+        ecrire(
+            sortie,
+            theme::info("  le mode fichiers reste intact : rien n’a été supprimé localement"),
+        )
+    }
+
+    #[cfg(not(feature = "postgres"))]
+    fn exporter_vers_bdd(&mut self, _url: &str, _sortie: &mut dyn Write) -> Resultat<()> {
+        Err("ce binaire est compilé sans la feature `postgres` : reconstruisez avec \
+             `cargo build --release --features postgres` pour exporter vers une base"
+            .into())
     }
 
     /// `/admin bdd` : quel support porte les données, et — si la feature
@@ -4058,6 +4384,90 @@ mod tests {
         let avant = metier(&app);
         lancer(&mut app, "/clients piste statut prospect");
         assert_eq!(metier(&app), avant, "statut inchangé = pas de conversion");
+    }
+
+    #[test]
+    fn admin_chemin_donne_le_dossier_reel_et_les_commandes_d_export() {
+        let dossier = std::env::temp_dir().join(format!("erp-chemin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dossier);
+        let mut app = App::ouvrir(&dossier).unwrap();
+        lancer(&mut app, "/clients nouveau --nom \"Atelier Dupont\" --type pro");
+        let texte = lancer(&mut app, "/admin chemin");
+        let absolu = std::fs::canonicalize(&dossier).unwrap();
+        assert!(
+            texte.contains(&absolu.display().to_string()),
+            "le chemin absolu doit apparaître : {texte}"
+        );
+        assert!(texte.contains("ERP_DONNEES_DIR"), "{texte}");
+        assert!(texte.contains("clients.tsv"), "une ligne par table : {texte}");
+        assert!(texte.contains("/admin export csv"), "{texte}");
+        assert!(texte.contains("/admin export bdd"), "{texte}");
+        assert!(texte.contains("cp -a"), "{texte}");
+
+        // --json : exploitable par un script (une seule ligne, clés attendues).
+        let json = lancer(&mut app, "/admin chemin --json");
+        assert!(json.trim_start().starts_with('{'), "{json}");
+        assert!(json.contains("\"mode\":\"fichiers\""), "{json}");
+        assert!(json.contains("\"nom\":\"clients\""), "{json}");
+        assert!(json.contains("\"base\":null"), "{json}");
+        let _ = std::fs::remove_dir_all(&dossier);
+    }
+
+    #[test]
+    fn admin_export_csv_ecrit_toutes_les_tables() {
+        let dossier = std::env::temp_dir().join(format!("erp-export-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dossier);
+        let cible = dossier.join("sortie");
+        let mut app = App::ouvrir(&dossier).unwrap();
+        lancer(&mut app, "/clients nouveau --nom \"Atelier Dupont\" --type pro");
+        lancer(&mut app, "/clients nouveau --nom \"Piste SARL\" --type pro --prospect");
+        let texte = lancer(&mut app, &format!("/admin export csv --dossier {}", cible.display()));
+        assert!(texte.contains("exportées en CSV"), "{texte}");
+
+        let clients = std::fs::read_to_string(cible.join("clients.csv")).unwrap();
+        assert!(
+            clients.starts_with("id;societe_id;nom;type_client;statut_client;"),
+            "{clients}"
+        );
+        assert!(clients.contains("Atelier Dupont"), "{clients}");
+        assert!(clients.contains("prospect"), "le statut est exporté : {clients}");
+        // Une table par modèle du schéma, plus les métadonnées et le manifeste.
+        for (table, _) in crate::orm::tables() {
+            assert!(cible.join(format!("{table}.csv")).exists(), "{table}.csv absent");
+        }
+        assert!(cible.join("meta.csv").exists());
+        let manifeste = std::fs::read_to_string(cible.join("manifeste.csv")).unwrap();
+        assert!(manifeste.starts_with("table;lignes;colonnes;fichier"), "{manifeste}");
+        assert!(manifeste.contains("clients.csv"), "{manifeste}");
+
+        // TSV : format natif du magasin, mêmes colonnes.
+        let cible_tsv = dossier.join("sortie-tsv");
+        let texte = lancer(
+            &mut app,
+            &format!("/admin export tsv --dossier {}", cible_tsv.display()),
+        );
+        assert!(texte.contains("exportées en TSV"), "{texte}");
+        let tsv = std::fs::read_to_string(cible_tsv.join("tables").join("clients.tsv")).unwrap();
+        assert!(tsv.starts_with("id\tsociete_id\tnom\t"), "{tsv}");
+
+        // Format inconnu : refus explicite, pas d'écriture silencieuse.
+        let texte = lancer(&mut app, "/admin export xml");
+        assert!(texte.contains("ERREUR"), "{texte}");
+        assert!(texte.contains("csv|tsv|bdd"), "{texte}");
+        let _ = std::fs::remove_dir_all(&dossier);
+    }
+
+    #[test]
+    fn admin_export_bdd_sans_feature_dit_quoi_faire() {
+        let mut app = app();
+        // Port volontairement fermé : aucun serveur n'est requis par la suite de
+        // tests, et un échec doit être un message, jamais une panique.
+        let texte = lancer(&mut app, "/admin export bdd postgres://erp@127.0.0.1:1/erp");
+        assert!(texte.contains("ERREUR"), "{texte}");
+        #[cfg(not(feature = "postgres"))]
+        assert!(texte.contains("--features postgres"), "{texte}");
+        #[cfg(feature = "postgres")]
+        assert!(texte.contains("connexion"), "{texte}");
     }
 
     #[test]

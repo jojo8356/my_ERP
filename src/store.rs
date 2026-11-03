@@ -383,6 +383,19 @@ impl Store {
     }
 
     /// Description du stockage, pour `/admin sante`.
+    /// Instantané complet de l'état, dans le format exact des supports :
+    /// `(table, lignes encodées)` + métadonnées. C'est ce que consomment
+    /// `/admin export` (CSV/TSV) et l'envoi vers PostgreSQL — une seule source
+    /// d'encodage, donc aucune divergence possible entre les trois sorties.
+    pub fn instantane(
+        &self,
+    ) -> Resultat<(
+        Vec<(&'static str, Vec<Vec<String>>)>,
+        std::collections::HashMap<String, String>,
+    )> {
+        Ok((self.tables_encodees()?, self.meta_encodee()))
+    }
+
     pub fn support(&self) -> String {
         #[cfg(feature = "postgres")]
         if let Some(bdd) = &self.bdd {
@@ -414,6 +427,17 @@ impl Store {
 
     pub fn dossier(&self) -> Option<&Path> {
         self.disque.as_deref()
+    }
+
+    /// URL de la base courante, **mot de passe masqué** (journaux, `/admin
+    /// chemin`). `None` en mode fichiers.
+    #[cfg(feature = "postgres")]
+    pub fn base_masquee(&self) -> Option<String> {
+        self.bdd.as_ref().map(|b| b.description().to_string())
+    }
+    #[cfg(not(feature = "postgres"))]
+    pub fn base_masquee(&self) -> Option<String> {
+        None
     }
 
     /// Charge toutes les tables depuis PostgreSQL (mêmes décodeurs que le mode

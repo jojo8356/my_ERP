@@ -131,6 +131,34 @@ reste facultatif — les règles d'authentification sont celles du CLI, la TUI n
 les réimplémente pas. L'en-tête rappelle en permanence société, régime, devise et
 session, pour ne jamais saisir une facture dans la mauvaise entreprise.
 
+### Retrouver et emporter ses données
+
+Une seule question à se poser : **où est l'état, et comment le sortir ?**
+
+```bash
+./target/release/my-erp /admin chemin          # dossier absolu, une ligne par table, tailles
+./target/release/my-erp /admin chemin --json   # même chose pour un script/monitoring
+./target/release/my-erp /admin export csv      # TOUTES les tables → CSV + meta.csv + manifeste.csv
+./target/release/my-erp /admin export tsv --dossier /media/usb/erp
+./target/release/my-erp /admin export bdd postgres://erp@127.0.0.1:5432/erp
+```
+
+- `/admin chemin` donne le chemin **exact** (canonique) du dossier `donnees/` ou,
+  en mode base, l'URL PostgreSQL (mot de passe masqué) : c'est la « route » à
+  mettre dans `cp`, `rsync`, une unité systemd ou `pg_dump` — les commandes sont
+  affichées prêtes à copier.
+- `/admin export csv|tsv` écrit **une table du schéma = un fichier**, avec
+  `meta.csv` (société courante, session, version, empreinte du schéma) et
+  `manifeste.csv` (table, lignes, colonnes, fichier) : de quoi tout recharger
+  dans un tableur, un script ou un autre outil. Défaut :
+  `${ERP_DONNEES_DIR}/exports/export-<horodatage>/`, sinon `--dossier`.
+- `/admin export bdd <url>` est la **migration** fichiers → PostgreSQL : le
+  schéma est créé par l'ORM si besoin, puis toutes les tables sont écrites dans
+  une transaction. Le dossier local reste intact (`--bdd` ensuite pour lire la
+  base, `ERP_DATABASE_URL` pour ne plus y penser).
+- Sens inverse (base → fichiers) : `pg_dump` (cité par `/admin chemin`) ou
+  `/admin export csv` depuis une session ouverte sur la base.
+
 ### Deux règles de conformité appliquées, pas seulement documentées
 
 - **Facture obligatoire ou non (CDC §11.2)** — `TypeClient::facture_obligatoire` :

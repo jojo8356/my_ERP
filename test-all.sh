@@ -399,6 +399,34 @@ etape_recette() {
     printf '  %s✗%s pagination des longues listes\n' "$ROUGE" "$NEUTRE" >&2; echecs=$((echecs+1))
   fi
 
+  # Localisation et export complet : la « route » des données doit être lisible,
+  # et l'export CSV doit produire une table par fichier.
+  if "$BIN" /admin chemin 2>/dev/null | grep -q "ERP_DONNEES_DIR"; then
+    printf '  %s✓%s /admin chemin : dossier des données et variables affichés\n' "$VERT" "$NEUTRE" >&2
+  else
+    printf '  %s✗%s /admin chemin incomplet\n' "$ROUGE" "$NEUTRE" >&2
+    echecs=$((echecs + 1))
+  fi
+  if "$BIN" /admin chemin --json 2>/dev/null | grep -q '"support"'; then
+    printf '  %s✓%s /admin chemin --json : sortie machine\n' "$VERT" "$NEUTRE" >&2
+  else
+    printf '  %s✗%s /admin chemin --json illisible\n' "$ROUGE" "$NEUTRE" >&2
+    echecs=$((echecs + 1))
+  fi
+  local export_dir="$DONNEES_TEST/export-verif"
+  rm -rf "$export_dir"
+  if "$BIN" /admin export csv --dossier "$export_dir" 2>/dev/null | grep -q "exportées en CSV"; then
+    if [ -s "$export_dir/clients.csv" ] && [ -s "$export_dir/manifeste.csv" ]; then
+      printf '  %s✓%s /admin export csv : une table = un fichier (+ manifeste)\n' "$VERT" "$NEUTRE" >&2
+    else
+      printf '  %s✗%s /admin export csv : fichiers manquants\n' "$ROUGE" "$NEUTRE" >&2
+      echecs=$((echecs + 1))
+    fi
+  else
+    printf '  %s✗%s /admin export csv\n' "$ROUGE" "$NEUTRE" >&2
+    echecs=$((echecs + 1))
+  fi
+
   # Sélecteurs de la TUI : la société courante est marquée, la session est lisible.
   # (Les touches e/u sont testées unitairement : ici on valide ce qu'elles pilotent.)
   if "$BIN" /societes 2>/dev/null | grep -q '▸'; then
