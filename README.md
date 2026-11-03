@@ -196,3 +196,135 @@ sortie 0 seulement si tout est vert.
 ADR-005 (Ratatui/formulaires), **ADR-006** (Rustorm sans base), **ADR-007**
 (sécurité locale : PBKDF2, TOTP, audit chaîné), **ADR-008** (PDF/e-mail/CSV/
 e-facture sans dépendance). Traçabilité du CDC : `CONFORMITE-CDC.md`.
+
+## 🚀 Installer, compiler et lancer en production
+
+### 0. Une seule commande (recommandé)
+
+```bash
+git clone https://github.com/jojo8356/my_ERP.git && cd my_ERP
+./scripts/installer-prod.sh                     # clone réutilisé, compile, installe
+./scripts/installer-prod.sh --avec-postgres     # + connecteur libpq
+./scripts/installer-prod.sh --aide              # toutes les options
+```
+
+Sur une machine vierge (une fois la branche fusionnée dans `main`, le script est
+aussi servi tel quel) :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jojo8356/my_ERP/main/scripts/installer-prod.sh \
+  | bash -s -- --branche main
+```
+
+Le script vérifie les prérequis (git, Rust stable, accès au dépôt, `libpq` si
+demandé), clone, compile en `--release`, installe le binaire, crée le dossier de
+données et contrôle que l'application démarre. Il ne crée **aucune** donnée
+métier : le premier lancement reste explicite (étape 5).
+
+### 1. Prérequis
+
+| Besoin | Détail |
+|---|---|
+| Rust stable | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh -s -- -y --profile minimal` |
+| git + réseau | `chromat` et `rustorm` sont des dépendances **git** (`github.com/jojo8356`) |
+| `libpq-dev` | uniquement pour `--features postgres` (`apt install libpq-dev`) |
+| Un vrai terminal | la TUI passe le terminal en mode brut (pas de `nohup`) |
+
+### 2. Cloner
+
+```bash
+git clone https://github.com/jojo8356/my_ERP.git
+cd my_ERP
+git checkout main        # une fois la PR #3 fusionnée
+# sinon, pour construire la version livrée avec prospects, notes et sélecteurs :
+git fetch origin arena/768a6cd6-my-erp
+git checkout arena/768a6cd6-my-erp
+```
+
+### 3. Compiler (release)
+
+```bash
+. "$HOME/.cargo/env"                 # si rustup vient d'être installé
+cargo build --release                # mode par défaut : fichiers locaux, aucune base
+# variante PostgreSQL (état dans la base, via Rustorm) :
+sudo apt install -y libpq-dev && cargo build --release --features postgres
+./target/release/my-erp --version
+```
+
+Le binaire est **autonome** : `target/release/my-erp` (aucun runtime, aucune
+dépendance à installer sur le serveur, hors `libpq` si la feature est utilisée).
+
+### 4. Installer et préparer les données
+
+```bash
+sudo install -m 755 target/release/my-erp /usr/local/bin/my-erp
+sudo mkdir -p /var/lib/my-erp && sudo chown "$USER":"$(id -gn)" /var/lib/my-erp
+export ERP_DONNEES_DIR=/var/lib/my-erp       # à mettre dans ~/.bashrc ou le service
+my-erp --version
+```
+
+`ERP_DONNEES_DIR` (ou `--donnees <dossier>`) désigne l'état ; sans lui, le
+binaire travaille dans `./donnees`. **Un seul processus écrivant à la fois** sur
+un même dossier de fichiers : un ERP de service, pas un cluster.
+
+### 5. Premier lancement (identité et compte administrateur)
+
+```bash
+my-erp /societe modifier --nom "Ma société" --siren 123456789 \
+        --adresse "1 rue de la Paix" --cp 06000 --ville Nice --forme micro-entreprise
+my-erp /utilisateurs nouveau admin --role admin --mot-de-passe "MotDePasse-2026!" \
+        --email moi@exemple.fr
+my-erp /utilisateurs 2fa admin         # SEC-02 : double authentification obligatoire
+my-erp /utilisateurs code admin        # ou un code à usage unique par e-mail (SEC-03)
+```
+
+### 6. Usage quotidien en production
+
+```bash
+my-erp tui                             # TUI : e = société, u = session, c = statut, o = note
+my-erp /auth connexion admin --mot-de-passe … --totp 123456
+my-erp /factures --impayees --retard   # scriptable : code de sortie 0/1
+my-erp /compta fec > fec.csv           # FEC DGFiP
+my-erp /admin sante                    # fichiers, lignes, sauvegarde, chaîne d'audit
+my-erp /admin sauvegarde               # copie datée dans donnees/sauvegardes/
+my-erp /admin audit --verifier         # détecte toute altération du journal
+```
+
+Sauvegarde de production : `/admin sauvegarde` (mode fichiers) ou `pg_dump`
+(mode PostgreSQL, à cadrer par la politique de rétention) — la copie du dossier
+`donnees/` est équivalente et suffit pour un redémarrage à l'identique.
+
+### 7. PostgreSQL en production — ce qui marche aujourd'hui
+
+```bash
+sudo -u postgres createuser erp
+sudo -u postgres createdb -O erp erp
+# le connecteur local de Rustorm ne transmet pas de mot de passe (SEC-07) :
+# pour 127.0.0.1/localhost, autorisez le compte local dans pg_hba.conf
+#   local   erp   erp                     peer
+#   host    erp   erp   127.0.0.1/32     trust
+export ERP_DATABASE_URL=postgres://erp@127.0.0.1:5432/erp
+my-erp /admin bdd          # migration par l'ORM (CREATE TABLE + index), puis état
+my-erp /clients            # mêmes commandes, état lu/écrit dans la base
+```
+
+Une base **distante** passe par le mode sécurisé de Rustorm (`sslmode=verify-full`,
+certificat de l'autorité attendu) : `postgres://erp:motdepasse@db.exemple.fr:5432/erp`.
+
+### 8. Service au quotidien (systemd, facultatif)
+
+```ini
+# /etc/systemd/system/my-erp@.service  →  systemctl start my-erp@admin
+[Unit]
+Description=ERP CLI (session %i)
+[Service]
+Type=oneshot
+RemainAfterExit=no
+User=erp
+Environment=ERP_DONNEES_DIR=/var/lib/my-erp
+Environment=NO_COLOR=1
+ExecStart=/usr/local/bin/my-erp /admin sante
+```
+
+Les tâches récurrentes (relances, sauvegardes) sont des **commandes** : un
+`cron` les appelle, par exemple `0 7 * * 1 my-erp /admin sauvegarde`.

@@ -179,7 +179,7 @@ etape_statique() {
            src/efacture.rs src/securite.rs src/theme.rs src/tui.rs \
            decisions/ADR-002-persistance-v1.md decisions/ADR-006-rustorm-sans-base.md \
            decisions/ADR-007-securite-locale.md decisions/ADR-008-documents-pdf-email-efacture.md \
-           scripts/scenario-demo.sh; do
+           scripts/scenario-demo.sh scripts/installer-prod.sh; do
     verifier "fichier présent : $f" test -s "$f" || echecs=$((echecs + 1))
   done
 
@@ -224,6 +224,19 @@ etape_statique() {
     echecs=$((echecs + 1))
   else
     printf '  %s✓%s messages d’erreur rédigés en français\n' "$VERT" "$NEUTRE" >&2
+  fi
+
+  # Le script d'installation de production doit rester exécutable et valide.
+  if bash -n scripts/installer-prod.sh 2>/dev/null; then
+    if bash scripts/installer-prod.sh --aide 2>/dev/null | grep -q -- '--avec-postgres'; then
+      printf '  %s✓%s script d’installation production (syntaxe et aide)\n' "$VERT" "$NEUTRE" >&2
+    else
+      printf '  %s✗%s installer-prod.sh : aide incomplète\n' "$ROUGE" "$NEUTRE" >&2
+      echecs=$((echecs + 1))
+    fi
+  else
+    printf '  %s✗%s installer-prod.sh : syntaxe invalide\n' "$ROUGE" "$NEUTRE" >&2
+    echecs=$((echecs + 1))
   fi
 
   # Le socle « sans base de données » doit rester vrai par défaut.
